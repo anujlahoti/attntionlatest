@@ -17,19 +17,21 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 }
 
 export default function SessionPage() {
-  const supabase = useMemo(() => createClient(), [])
   const [profile, setProfile] = useState<{ id: string; full_name?: string; profession?: string; company?: string; niche?: string } | null>(null)
 
   useEffect(() => {
+    // Created in effects (browser only) so the page can be prerendered without env vars.
+    const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
       const { data } = await supabase.from('users').select('id, full_name, profession, company, niche').eq('id', user.id).single()
       setProfile(data ?? { id: user.id })
     })
-  }, [supabase])
+  }, [])
 
   const adapter = useMemo<SessionAdapter | null>(() => {
     if (!profile) return null
+    const supabase = createClient()
     const weekOf = currentWeekOf()
     // Filled in by load(); read by the later steps of the flow.
     const current = { sessionId: '', photoPath: null as string | null }
@@ -117,7 +119,7 @@ export default function SessionPage() {
         await postJSON('/api/session/publish', { sessionId: current.sessionId, finalPost: post, markPosted: true })
       },
     }
-  }, [profile, supabase])
+  }, [profile])
 
   return (
     <div className="min-h-screen">

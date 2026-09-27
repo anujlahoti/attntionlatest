@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { BrandContext, NICHE_MAP } from '@/types'
 import AppHeader from '@/components/dashboard/AppHeader'
@@ -26,13 +26,14 @@ interface Profile {
 type Saving = '' | 'profile' | 'goals' | 'brand' | 'linkedin'
 
 export default function SettingsPage() {
-  const supabase = useMemo(() => createClient(), [])
   const [profile, setProfile] = useState<Profile | null>(null)
   const [saving, setSaving] = useState<Saving>('')
   const [saved, setSaved] = useState<Saving>('')
   const [error, setError] = useState('')
 
   useEffect(() => {
+    // Created in effects/handlers (browser only) so the page can be prerendered without env vars.
+    const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
       const { data } = await supabase.from('users').select('*').eq('id', user.id).single()
@@ -48,13 +49,13 @@ export default function SettingsPage() {
         blotato_linkedin_profile_id: data?.blotato_linkedin_profile_id ?? '',
       })
     })
-  }, [supabase])
+  }, [])
 
   async function save(section: Saving, fields: Record<string, unknown>) {
     if (!profile) return
     setSaving(section)
     setError('')
-    const { error: saveError } = await supabase.from('users').update(fields).eq('id', profile.id)
+    const { error: saveError } = await createClient().from('users').update(fields).eq('id', profile.id)
     setSaving('')
     if (saveError) {
       setError(saveError.message)
