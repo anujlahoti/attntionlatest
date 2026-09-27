@@ -3,6 +3,7 @@
 import { useState, FormEvent } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { supabaseConfigured } from '@/lib/supabase/env'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Logo from '@/components/ui/Logo'
@@ -17,6 +18,10 @@ export default function LoginPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!supabaseConfigured) {
+      setError('Sign-in is not switched on yet. Try the demo in the meantime.')
+      return
+    }
     setLoading(true)
     setError('')
 

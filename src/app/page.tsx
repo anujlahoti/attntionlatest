@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { supabaseConfigured } from '@/lib/supabase/env'
 import Logo from '@/components/ui/Logo'
 import MuseFace from '@/components/ui/MuseFace'
 import Badge from '@/components/ui/Badge'
@@ -69,8 +70,7 @@ const PALETTE = [
 const MARQUEE = ['Studied', 'Asked', 'Spoken', 'Painted', 'Posted', 'Repeated']
 
 export default async function Home() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = supabaseConfigured ? (await (await createClient()).auth.getUser()).data.user : null
 
   return (
     <div className="min-h-screen overflow-x-hidden">

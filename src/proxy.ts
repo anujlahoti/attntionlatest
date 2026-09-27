@@ -1,7 +1,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { supabaseConfigured } from '@/lib/supabase/env'
+
+const isPublic = (path: string) => path === '/' || path === '/login' || path.startsWith('/demo')
 
 export async function proxy(request: NextRequest) {
+  if (!supabaseConfigured) {
+    const path = request.nextUrl.pathname
+    return path.startsWith('/api') || isPublic(path)
+      ? NextResponse.next({ request })
+      : NextResponse.redirect(new URL('/', request.url))
+  }
+
   let supabaseResponse = NextResponse.next({ request })
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +45,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Public paths
-  if (path === '/' || path === '/login' || path.startsWith('/demo')) {
+  if (isPublic(path)) {
     return supabaseResponse
   }
 
