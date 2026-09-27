@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
-import StepIndicator from '@/components/onboarding/StepIndicator'
+import OnboardingShell from '@/components/onboarding/OnboardingShell'
 import GoalPicker from '@/components/onboarding/GoalPicker'
 
 export default function OnboardingGoals() {
@@ -30,28 +30,16 @@ export default function OnboardingGoals() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <StepIndicator step={2} total={3} />
-        <h1 className="font-syne text-2xl font-bold mt-6">
-          What do you want LinkedIn to do for you?
-        </h1>
-        <p className="mt-1 text-zinc-400 text-sm">Pick up to 3.</p>
-
-        <div className="mt-8">
-          <GoalPicker selected={selected} onToggle={toggle} />
-        </div>
-
-        <Button
-          onClick={handleContinue}
-          size="lg"
-          loading={loading}
-          disabled={selected.length === 0}
-          className="w-full mt-6"
-        >
-          Continue
+    <OnboardingShell step={2} title="What should LinkedIn do for you?" subtitle="Pick up to three. I'll steer every post toward them.">
+      <GoalPicker selected={selected} onToggle={toggle} />
+      <div className="mt-10 flex gap-4">
+        <Button variant="secondary" size="lg" onClick={() => router.push('/onboarding')}>
+          ← Back
+        </Button>
+        <Button onClick={handleContinue} size="lg" loading={loading} disabled={selected.length === 0}>
+          Continue →
         </Button>
       </div>
-    </div>
+    </OnboardingShell>
   )
 }

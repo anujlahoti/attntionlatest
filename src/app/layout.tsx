@@ -1,30 +1,36 @@
-import type { Metadata } from "next";
-import { Inter, Syne } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { DM_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
 });
 
-const syne = Syne({
-  variable: "--font-syne",
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
-  weight: ["700", "800"],
+  style: ["normal", "italic"],
+  axes: ["SOFT", "WONK", "opsz"],
 });
 
 export const metadata: Metadata = {
-  title: "Attntion",
-  description: "7 minutes. One LinkedIn post. Every week.",
+  title: {
+    default: "Attntion · your weekly LinkedIn muse",
+    template: "%s · Attntion",
+  },
+  description:
+    "Your muse asks one question a week, listens to your answer, and composes a LinkedIn post in your own words, shaped by what is winning in your niche.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#f3ede2",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${syne.variable}`}>
-      <body className="min-h-screen bg-[#080808] text-white antialiased">
-        {children}
-      </body>
+    <html lang="en" className={`${dmSans.variable} ${fraunces.variable}`}>
+      <body className="min-h-screen text-ink font-sans antialiased">{children}</body>
     </html>
   );
 }

@@ -1,9 +1,25 @@
 import { HTMLAttributes } from 'react'
 
-export default function Badge({ className = '', children, ...props }: HTMLAttributes<HTMLSpanElement>) {
+type Tone = 'paper' | 'ochre' | 'cobalt' | 'rose' | 'olive' | 'ink'
+
+const tones: Record<Tone, string> = {
+  paper: 'bg-surface text-ink',
+  ochre: 'bg-ochre text-ink',
+  cobalt: 'bg-cobalt text-white',
+  rose: 'bg-rose text-ink',
+  olive: 'bg-olive text-white',
+  ink: 'bg-ink text-paper',
+}
+
+export default function Badge({
+  tone = 'paper',
+  className = '',
+  children,
+  ...props
+}: HTMLAttributes<HTMLSpanElement> & { tone?: Tone }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800/60 px-3 py-1 text-xs text-zinc-300 ${className}`}
+      className={`inline-flex items-center gap-1.5 border-[1.5px] border-ink px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] cut-sm ${tones[tone]} ${className}`}
       {...props}
     >
       {children}

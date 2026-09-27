@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { NICHE_MAP } from '@/types'
 import Button from '@/components/ui/Button'
-import Input from '@/components/ui/Input'
-import StepIndicator from '@/components/onboarding/StepIndicator'
+import Input, { Field } from '@/components/ui/Input'
+import OnboardingShell from '@/components/onboarding/OnboardingShell'
+import ProfessionPicker from '@/components/onboarding/ProfessionPicker'
 
 export default function OnboardingStep1() {
   const router = useRouter()
@@ -14,19 +15,25 @@ export default function OnboardingStep1() {
   const [profession, setProfession] = useState('')
   const [company, setCompany] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!profession) {
+      setError('Pick the role that fits you best.')
+      return
+    }
     setLoading(true)
+    setError('')
 
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      setLoading(false)
+      router.push('/login')
       return
     }
 
-    await supabase.from('users').upsert({
+    const { error: saveError } = await supabase.from('users').upsert({
       id: user.id,
       email: user.email,
       full_name: fullName,
@@ -37,45 +44,35 @@ export default function OnboardingStep1() {
     })
 
     setLoading(false)
+    if (saveError) {
+      setError(
+        saveError.code === '42P01' || saveError.message.includes('does not exist')
+          ? 'The database is not set up yet. Run supabase/schema.sql in the Supabase SQL editor, then try again.'
+          : saveError.message
+      )
+      return
+    }
     router.push('/onboarding/goals')
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <StepIndicator step={1} total={3} />
-        <h1 className="font-syne text-2xl font-bold mt-6">Tell us about yourself.</h1>
-        <p className="mt-1 text-zinc-400 text-sm">This shapes everything Attntion writes for you.</p>
-
-        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
-          <Input
-            placeholder="Full name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-          />
-          <select
-            value={profession}
-            onChange={(e) => setProfession(e.target.value)}
-            required
-            className="w-full bg-zinc-900 border border-zinc-800 focus:border-[#00E8D0] focus:outline-none rounded-lg px-4 py-3 text-white"
-          >
-            <option value="" disabled>Select your profession</option>
-            {Object.keys(NICHE_MAP).map((key) => (
-              <option key={key} value={key}>{key}</option>
-            ))}
-          </select>
-          <Input
-            placeholder="Company / brand name"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            required
-          />
-          <Button type="submit" size="lg" loading={loading} className="w-full mt-2">
-            Continue
-          </Button>
-        </form>
-      </div>
-    </div>
+    <OnboardingShell step={1} title="Hello. I'm your muse." subtitle="Tell me who I'm painting. This shapes every question I ask.">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-7">
+        <Field label="Your name">
+          <Input placeholder="Priya Nair" value={fullName} onChange={(e) => setFullName(e.target.value)} required autoFocus />
+        </Field>
+        <div className="flex flex-col gap-2.5">
+          <span className="text-sm font-semibold">What do you do?</span>
+          <ProfessionPicker value={profession} onChange={setProfession} />
+        </div>
+        <Field label="Company or brand">
+          <Input placeholder="Loop Studio" value={company} onChange={(e) => setCompany(e.target.value)} required />
+        </Field>
+        {error && <p className="text-sm font-medium text-terracotta">{error}</p>}
+        <Button type="submit" size="lg" loading={loading} className="w-full sm:w-auto sm:self-start">
+          Continue →
+        </Button>
+      </form>
+    </OnboardingShell>
   )
 }

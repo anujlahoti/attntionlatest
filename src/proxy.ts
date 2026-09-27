@@ -27,8 +27,15 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
 
+  // API routes do their own auth checks and must answer with JSON, not redirects.
+  if (path.startsWith('/api')) return supabaseResponse
+
+  if (path === '/login' && user) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
   // Public paths
-  if (path === '/' || path === '/login' || path.startsWith('/auth')) {
+  if (path === '/' || path === '/login' || path.startsWith('/demo')) {
     return supabaseResponse
   }
 

@@ -1,275 +1,130 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import Button from '@/components/ui/Button'
-import Badge from '@/components/ui/Badge'
-import VoiceRecorder from '@/components/session/VoiceRecorder'
-import PhotoUpload from '@/components/session/PhotoUpload'
-import PostDraft from '@/components/session/PostDraft'
-import PublishButton, { PublishResult } from '@/components/session/PublishButton'
+import { currentWeekOf } from '@/lib/week'
+import SessionFlow, { SessionAdapter } from '@/components/session/SessionFlow'
+import AppHeader from '@/components/dashboard/AppHeader'
 
-type Step = 1 | 2 | 3 | 4
+async function postJSON<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed')
+  return res.json()
+}
 
 export default function SessionPage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [step, setStep] = useState<Step>(1)
-
-  const [userId, setUserId] = useState('')
-  const [sessionId, setSessionId] = useState('')
-  const [question, setQuestion] = useState('')
-  const [winningFormat, setWinningFormat] = useState('')
-
-  const [transcript, setTranscript] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generateError, setGenerateError] = useState('')
-  const [draftPost, setDraftPost] = useState('')
-  const [photoPath, setPhotoPath] = useState<string | null>(null)
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
-
-  const [publishing, setPublishing] = useState<PublishResult | null>(null)
-  const [copied, setCopied] = useState(false)
+  const supabase = useMemo(() => createClient(), [])
+  const [profile, setProfile] = useState<{ id: string; full_name?: string; profession?: string; company?: string; niche?: string } | null>(null)
 
   useEffect(() => {
-    async function loadSession() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
-      setUserId(user.id)
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data } = await supabase.from('users').select('id, full_name, profession, company, niche').eq('id', user.id).single()
+      setProfile(data ?? { id: user.id })
+    })
+  }, [supabase])
 
-      const weekOf = new Date().toISOString().split('T')[0]
-      let { data: existing } = await supabase
-        .from('weekly_sessions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('week_of', weekOf)
-        .maybeSingle()
+  const adapter = useMemo<SessionAdapter | null>(() => {
+    if (!profile) return null
+    const weekOf = currentWeekOf()
+    // Filled in by load(); read by the later steps of the flow.
+    const current = { sessionId: '', photoPath: null as string | null }
 
-      if (!existing) {
-        await fetch('/api/intelligence/run', { method: 'POST' })
-        const { data: created } = await supabase
-          .from('weekly_sessions')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('week_of', weekOf)
-          .maybeSingle()
-        existing = created
-      }
+    return {
+      userName: profile.full_name || 'You',
+      headline: [profile.profession, profile.company].filter(Boolean).join(' · '),
+      exitHref: '/dashboard',
+      exitLabel: 'Back to dashboard',
 
-      if (existing) {
-        setSessionId(existing.id)
-        setQuestion(existing.question || '')
-        setTranscript(existing.transcript || '')
-        setDraftPost(existing.draft_post || existing.final_post || '')
-        setPhotoPath(existing.photo_path || null)
+      async load() {
+        const fetchSession = () =>
+          supabase.from('weekly_sessions').select('*').eq('user_id', profile.id).eq('week_of', weekOf).maybeSingle()
 
-        if (existing.photo_path) {
-          const { data: signed } = await supabase.storage
-            .from('session-files')
-            .createSignedUrl(existing.photo_path, 60 * 60)
-          setPhotoPreviewUrl(signed?.signedUrl || null)
+        let { data: session } = await fetchSession()
+        if (!session) {
+          await postJSON('/api/intelligence/run', {})
+          ;({ data: session } = await fetchSession())
         }
+        if (!session) throw new Error('Could not create this week’s session. Check that the database schema is set up.')
 
-        const { data: profile } = await supabase
-          .from('users')
-          .select('niche')
-          .eq('id', user.id)
-          .single()
+        current.sessionId = session.id
+        current.photoPath = session.photo_path || null
 
         const { data: intel } = await supabase
           .from('niche_intelligence')
-          .select('winning_format')
-          .eq('niche', profile?.niche)
+          .select('winning_format, topic_clusters')
+          .eq('niche', profile.niche)
           .eq('week_of', weekOf)
           .maybeSingle()
 
-        setWinningFormat(intel?.winning_format || '')
-
-        if (existing.draft_post || existing.final_post) {
-          setStep(existing.photo_path ? 4 : 3)
-        } else if (existing.transcript) {
-          setStep(2)
-          handleTranscribed(existing.transcript, existing.id)
+        let photoUrl: string | null = null
+        if (current.photoPath) {
+          const { data: signed } = await supabase.storage.from('session-files').createSignedUrl(current.photoPath, 60 * 60)
+          photoUrl = signed?.signedUrl || null
         }
-      }
 
-      setLoading(false)
+        return {
+          question: session.question || '',
+          winningFormat: intel?.winning_format,
+          transcript: session.transcript || '',
+          draftPost: session.final_post || session.draft_post || '',
+          photoUrl,
+          published: session.status === 'published',
+        }
+      },
+
+      async transcribe(audio, filename) {
+        const form = new FormData()
+        form.append('audio', audio, filename)
+        form.append('sessionId', current.sessionId)
+        const res = await fetch('/api/session/transcribe', { method: 'POST', body: form })
+        if (!res.ok) throw new Error('Transcription failed')
+        return (await res.json()).transcript
+      },
+
+      async generate(transcript) {
+        const { draftPost, preview } = await postJSON<{ draftPost: string; preview?: boolean }>('/api/session/generate', {
+          sessionId: current.sessionId,
+          transcript,
+        })
+        return { post: draftPost, preview }
+      },
+
+      async uploadPhoto(file) {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `${profile.id}/${current.sessionId}/photo.${ext}`
+        const { error } = await supabase.storage.from('session-files').upload(path, file, { upsert: true })
+        if (error) throw error
+        current.photoPath = path
+        await supabase.from('weekly_sessions').update({ photo_path: path }).eq('id', current.sessionId)
+        return URL.createObjectURL(file)
+      },
+
+      async removePhoto() {
+        current.photoPath = null
+        await supabase.from('weekly_sessions').update({ photo_path: null }).eq('id', current.sessionId)
+      },
+
+      publish(post) {
+        return postJSON('/api/session/publish', { sessionId: current.sessionId, finalPost: post, photoPath: current.photoPath })
+      },
+
+      async markPosted(post) {
+        await postJSON('/api/session/publish', { sessionId: current.sessionId, finalPost: post, markPosted: true })
+      },
     }
-
-    loadSession()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router])
-
-  async function handleTranscribed(text: string, sessionIdOverride?: string) {
-    setTranscript(text)
-    setGenerateError('')
-    setGenerating(true)
-    try {
-      const res = await fetch('/api/session/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionIdOverride || sessionId }),
-      })
-      if (!res.ok) throw new Error('Generate failed')
-      const { draftPost } = await res.json()
-      setDraftPost(draftPost || '')
-      setStep(3)
-    } catch {
-      setGenerateError('Could not turn that into a post. Try again.')
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  async function copyPost() {
-    await navigator.clipboard.writeText(draftPost)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-600 border-t-[#00E8D0]" />
-      </div>
-    )
-  }
-
-  if (publishing) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="text-center max-w-sm">
-          <p className="text-5xl">🎉</p>
-          <h1 className="font-syne text-2xl font-bold mt-4">
-            {publishing.success ? 'Posted. See you next week.' : 'Saved for you.'}
-          </h1>
-          {publishing.message && (
-            <p className="mt-2 text-zinc-400 text-sm">{publishing.message}</p>
-          )}
-          <div className="mt-6 flex flex-col gap-3">
-            {publishing.success && publishing.postId && (
-              <a
-                href={`https://www.linkedin.com/feed/update/${publishing.postId}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Button size="lg" className="w-full">View on LinkedIn →</Button>
-              </a>
-            )}
-            {!publishing.success && (
-              <Button size="lg" onClick={copyPost} className="w-full">
-                {copied ? 'Copied!' : 'Copy post'}
-              </Button>
-            )}
-            <Button variant="ghost" onClick={() => router.push('/dashboard')}>
-              Back to dashboard
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  }, [profile, supabase])
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-2xl">
-        {step === 1 && (
-          <div className="text-center">
-            <p className="text-2xl font-medium text-white">{question}</p>
-            {winningFormat && (
-              <div className="mt-6">
-                <p className="text-sm text-zinc-400 mb-2">This week&apos;s winning format in your niche:</p>
-                <Badge>{winningFormat}</Badge>
-              </div>
-            )}
-            <Button size="lg" onClick={() => setStep(2)} className="mt-8">
-              I&apos;m ready — start recording →
-            </Button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="flex flex-col items-center gap-8">
-            {!transcript ? (
-              <VoiceRecorder sessionId={sessionId} onTranscribed={handleTranscribed} />
-            ) : (
-              <div className="w-full">
-                <textarea
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  rows={8}
-                  className="w-full bg-zinc-900 border border-zinc-800 focus:border-[#00E8D0] focus:outline-none rounded-lg px-4 py-3 text-white resize-none"
-                />
-                {generating && (
-                  <p className="mt-4 flex items-center justify-center gap-2 text-sm text-zinc-400">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    Turning that into a post...
-                  </p>
-                )}
-                {generateError && (
-                  <div className="mt-4 flex flex-col items-center gap-2">
-                    <p className="text-sm text-red-400">{generateError}</p>
-                    <Button onClick={() => handleTranscribed(transcript)}>Try again</Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="text-center">
-            <h1 className="font-syne text-2xl font-bold">Add a photo.</h1>
-            <p className="mt-1 text-zinc-400 text-sm max-w-sm mx-auto">
-              Real photos perform 3x better on LinkedIn. Take one now or upload from your camera roll.
-            </p>
-            <div className="mt-8 max-w-sm mx-auto">
-              <PhotoUpload
-                userId={userId}
-                sessionId={sessionId}
-                onUploaded={(path, previewUrl) => {
-                  setPhotoPath(path)
-                  setPhotoPreviewUrl(previewUrl)
-                }}
-              />
-            </div>
-            <Button size="lg" onClick={() => setStep(4)} disabled={!photoPath} className="mt-6">
-              Next →
-            </Button>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div>
-              <h1 className="font-syne text-2xl font-bold mb-4">Review your post.</h1>
-              <PostDraft value={draftPost} onChange={setDraftPost} />
-            </div>
-            <div>
-              {photoPreviewUrl && (
-                <div className="aspect-square rounded-xl overflow-hidden bg-zinc-900 mb-4">
-                  <img
-                    src={photoPreviewUrl}
-                    alt="Selected"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-              <PublishButton
-                sessionId={sessionId}
-                finalPost={draftPost}
-                photoPath={photoPath}
-                onResult={setPublishing}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+    <div className="min-h-screen">
+      <AppHeader />
+      <main className="mx-auto max-w-3xl px-4 sm:px-6 pt-10">
+        {adapter ? <SessionFlow adapter={adapter} /> : null}
+      </main>
     </div>
   )
 }

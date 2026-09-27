@@ -13,12 +13,17 @@ export async function POST(request: Request) {
 
   if (!audioFile) return NextResponse.json({ error: 'No audio file' }, { status: 400 })
 
-  const buffer = Buffer.from(await audioFile.arrayBuffer())
-  const transcript = await transcribeAudio(buffer, audioFile.name || 'voice.webm')
+  try {
+    const buffer = Buffer.from(await audioFile.arrayBuffer())
+    const transcript = await transcribeAudio(buffer, audioFile.name || 'voice.webm')
 
-  await supabase.from('weekly_sessions')
-    .update({ transcript, status: 'transcribed' })
-    .eq('id', sessionId)
+    await supabase.from('weekly_sessions')
+      .update({ transcript, status: 'transcribed' })
+      .eq('id', sessionId)
 
-  return NextResponse.json({ transcript })
+    return NextResponse.json({ transcript })
+  } catch (err) {
+    console.error('Transcription failed', err)
+    return NextResponse.json({ error: 'Transcription failed' }, { status: 502 })
+  }
 }

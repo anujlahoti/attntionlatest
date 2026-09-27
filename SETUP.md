@@ -41,6 +41,43 @@ vercel
 
 Add all `.env.local` values as Environment Variables in the Vercel dashboard → Redeploy.
 
+### Go-live checklist
+
+1. **Vercel env vars**: every key from `.env.local`, with `NEXT_PUBLIC_APP_URL` set to the production
+   URL and a fresh random `CRON_SECRET` (Vercel sends it to `/api/cron/weekly` automatically).
+2. **Supabase → Authentication → URL Configuration**: set Site URL to the production URL and add
+   `https://<your-domain>/api/auth/callback` to Redirect URLs, or magic links will point at localhost.
+3. **Supabase → Authentication → Emails → SMTP**: plug in a real sender (Resend, Postmark, SES…).
+   The built-in sender only allows a few emails per hour, which is fine for testing but not for users.
+4. **AI**: add credits to OpenAI or set `ANTHROPIC_API_KEY` (`sk-ant-…`). Until then posts are
+   "sketch mode" drafts assembled from the user's own words.
+5. **Auto-posting (optional)**: set `BLOTATO_API_KEY`; each user pastes their Blotato LinkedIn
+   profile ID in Settings → Auto-posting.
+
+The weekly cron (`vercel.json`) runs Sunday 22:00 UTC (Monday 06:00 SGT): it prepares every user's
+question (one Apify scrape per niche, shared) and refreshes post analytics.
+
+## Running with limited keys
+
+Only Supabase is required. Every other integration has a fallback, and the dashboard's
+"palette" panel shows which ones are live:
+
+| Missing | What happens instead |
+| --- | --- |
+| AI (Anthropic / OpenAI, or out of credits) | Fallback question bank + a "preview writer" that arranges the user's own words into a post |
+| Whisper | Browser speech recognition (Chrome/Edge/Safari) during recording, or type the answer |
+| Firecrawl | Fetches the homepage directly and lets the AI read it |
+| Apify | Curated sample posts per niche (with Apify but no AI, the real posts are analysed heuristically) |
+| Blotato | "Copy & open LinkedIn" + "I've posted it" |
+
+`ANTHROPIC_API_KEY` must start with `sk-ant-` to be used; Claude is preferred over OpenAI when both are set.
+
+`/demo` runs the whole flow with no account (nothing is saved), which is handy when Supabase's
+built-in email sender hits its rate limit on magic links.
+
+If you ran `schema.sql` before the photo-replace policy was added, also run
+`supabase/patch-001-photo-upsert.sql`.
+
 ## Notes on this build
 
 - This project was scaffolded with Next.js 16 (App Router) and React 19. Next.js 16 renamed the
