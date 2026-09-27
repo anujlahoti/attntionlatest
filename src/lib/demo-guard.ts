@@ -1,3 +1,5 @@
+import { NICHE_MAP, BrandContext } from '@/types'
+import { DEEP_PROFILE_FIELDS, PersonContextInput } from './profile'
 import { NextResponse } from 'next/server'
 
 // The /api/demo/* routes run without an account, so cap how often one visitor
@@ -19,4 +21,28 @@ export function demoRateLimit(request: Request): NextResponse | null {
   recent.push(now)
   hits.set(ip, recent)
   return null
+}
+
+// Demo requests carry the visitor's profile from the browser. Keep only known
+// fields, as short strings, before they go anywhere near a prompt.
+export function demoProfile(raw: unknown): PersonContextInput & { linkedin_niche_slug: string } {
+  const body = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const str = (v: unknown, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined)
+  const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, 3).map((x) => String(x).slice(0, 80)) : undefined)
+
+  const profession = str(body.profession) ?? 'Startup Founder'
+  const niche = profession in NICHE_MAP ? profession : 'Startup Founder'
+  const profile: PersonContextInput & { linkedin_niche_slug: string } = {
+    full_name: str(body.name ?? body.full_name, 80),
+    profession,
+    niche,
+    linkedin_niche_slug: NICHE_MAP[niche],
+    goals: list(body.goals),
+    brand_context: body.brandContext && typeof body.brandContext === 'object' ? (body.brandContext as BrandContext) : undefined,
+  }
+  for (const field of DEEP_PROFILE_FIELDS) {
+    const value = Array.isArray(body[field]) ? list(body[field]) : str(body[field])
+    if (value !== undefined) (profile as unknown as Record<string, unknown>)[field] = value
+  }
+  return profile
 }

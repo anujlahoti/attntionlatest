@@ -1,18 +1,11 @@
+import { FALLBACK_CTAS, pickHashtags } from './post-format'
+
 // A no-AI fallback that assembles a LinkedIn-shaped draft from the user's own
-// words: hook first, one idea per line, lesson last, then a comment prompt.
+// words: hook first, one idea per line, lesson last, then a CTA and hashtags.
 // Used only when the AI provider is unavailable, and flagged as a preview in the UI.
 
 const FILLERS = /\b(?:um+|uh+|erm|you know|i mean|kind of|sort of|basically|literally)\b,?\s*/gi
 const LESSON = /\b(learn|learnt|learned|realis|realiz|lesson|taught|the truth is|what matters|turns out)/i
-
-const CLOSERS: Record<string, string> = {
-  leads: 'Have you dealt with something like this with your own customers?',
-  visibility: 'What would you have done differently?',
-  speaking: 'Has this happened to you? I would love to hear how you handled it.',
-  investors: 'Founders, what would you have done here?',
-  hiring: 'Would you want to work on a team that does this?',
-  community: 'What is your version of this story?',
-}
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -45,7 +38,14 @@ function toSentences(text: string): string[] {
     .map((s) => capitalize(/[.!?]$/.test(s) ? s : `${s}.`))
 }
 
-export function writePreviewPost(transcript: string, goals: string[] = []): string {
+export interface PreviewAuthor {
+  goals?: string[]
+  target_audience?: string[]
+  linkedin_niche_slug?: string
+}
+
+// Hook + Content + CTA + Hashtags, assembled from the user's own words.
+export function writePreviewPost(transcript: string, author: PreviewAuthor = {}): string {
   const sentences = toSentences(transcript)
   if (!sentences.length) return transcript.trim()
 
@@ -68,8 +68,9 @@ export function writePreviewPost(transcript: string, goals: string[] = []): stri
     else body.push(s)
   }
 
-  const closer = CLOSERS[goals[0]] ?? CLOSERS.visibility
-  return [hook, ...body, ...(lesson ? [lesson] : []), closer].join('\n\n')
+  const cta = FALLBACK_CTAS[author.goals?.[0] ?? ''] ?? FALLBACK_CTAS.visibility
+  const hashtags = pickHashtags(author.linkedin_niche_slug ?? '', author.target_audience).join(' ')
+  return [hook, ...body, ...(lesson ? [lesson] : []), cta, hashtags].join('\n\n')
 }
 
 // Questions grouped by the winning format they are designed to draw out.

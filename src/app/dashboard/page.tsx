@@ -128,6 +128,33 @@ export default async function Dashboard() {
                     </dd>
                   </div>
                 )}
+                {profile?.industry && (
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Industry</dt>
+                    <dd className="mt-0.5 font-semibold">{profile.industry}</dd>
+                  </div>
+                )}
+                {profile?.target_audience?.length ? (
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Writing for</dt>
+                    <dd className="mt-1.5 flex flex-wrap gap-1.5">
+                      {profile.target_audience.map((a: string) => (
+                        <Badge key={a} tone="ochre">{a}</Badge>
+                      ))}
+                    </dd>
+                  </div>
+                ) : null}
+                {profile?.communication_tone && (
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Your natural voice</dt>
+                    <dd className="mt-0.5 font-display text-lg italic">{profile.communication_tone.split(' — ')[0]}</dd>
+                  </div>
+                )}
+                {!profile?.profile_type && (
+                  <Link href="/onboarding/profile" className="block bg-ochre border-2 border-ink cut-sm p-3 text-sm font-semibold hover:shadow-ink-sm transition">
+                    🎲 Take the 7-tap profile quiz for sharper questions →
+                  </Link>
+                )}
                 {profile?.brand_context?.tone && (
                   <div>
                     <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Brand voice</dt>

@@ -1,9 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { generateLinkedInPost } from '@/lib/content'
-import { writePreviewPost } from '@/lib/preview-writer'
+import { draftPost } from '@/lib/drafting'
 import { NextResponse } from 'next/server'
 
-export const maxDuration = 60
+export const maxDuration = 120
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -19,7 +18,7 @@ export async function POST(request: Request) {
   }
 
   const [{ data: session }, { data: profile }] = await Promise.all([
-    supabase.from('weekly_sessions').select('*').eq('id', sessionId).single(),
+    supabase.from('weekly_sessions').select('*').eq('id', sessionId).eq('user_id', user.id).single(),
     supabase.from('users').select('*').eq('id', user.id).single(),
   ])
 
@@ -33,29 +32,19 @@ export async function POST(request: Request) {
     .eq('week_of', session.week_of)
     .maybeSingle()
 
-  try {
-    const draftPost = await generateLinkedInPost({
-      transcript: session.transcript,
-      winningFormat: intel?.winning_format || 'story',
-      winningHook: intel?.winning_hook || 'opens with a specific moment',
-      niche: profile.niche,
-      profession: profile.profession,
-      brandContext: profile.brand_context || {},
-      goals: profile.goals || [],
-    })
+  const { post, preview } = await draftPost(
+    session.transcript,
+    {
+      winning_format: intel?.winning_format || 'personal story with a lesson',
+      winning_hook: intel?.winning_hook || 'opens with a specific moment',
+      topic_clusters: intel?.topic_clusters || [],
+    },
+    profile
+  )
 
-    await supabase.from('weekly_sessions')
-      .update({ draft_post: draftPost, status: 'drafted' })
-      .eq('id', sessionId)
+  await supabase.from('weekly_sessions')
+    .update({ draft_post: post, status: 'drafted' })
+    .eq('id', sessionId)
 
-    return NextResponse.json({ draftPost })
-  } catch (err) {
-    // AI is down (no key, no credits): hand back a preview built from their own words.
-    console.error('Post generation failed, using preview writer', err)
-    const draftPost = writePreviewPost(session.transcript, profile.goals || [])
-    await supabase.from('weekly_sessions')
-      .update({ draft_post: draftPost, status: 'drafted' })
-      .eq('id', sessionId)
-    return NextResponse.json({ draftPost, preview: true })
-  }
+  return NextResponse.json({ draftPost: post, preview })
 }

@@ -218,3 +218,23 @@ body {
 @keyframes marquee {
   to { transform: translateX(-50%); }
 }
+
+/* Deep-profile quiz: cards slide in from one side and out the other */
+.card-in-right { animation: card-in-right 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.card-in-left { animation: card-in-left 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.card-out-left { animation: card-out-left 0.2s ease-in both; }
+.card-out-right { animation: card-out-right 0.2s ease-in both; }
+@keyframes card-in-right {
+  from { opacity: 0; transform: translateX(60px) rotate(2deg); }
+  to { opacity: 1; transform: translateX(0) rotate(0); }
+}
+@keyframes card-in-left {
+  from { opacity: 0; transform: translateX(-60px) rotate(-2deg); }
+  to { opacity: 1; transform: translateX(0) rotate(0); }
+}
+@keyframes card-out-left {
+  to { opacity: 0; transform: translateX(-60px) rotate(-3deg); }
+}
+@keyframes card-out-right {
+  to { opacity: 0; transform: translateX(60px) rotate(3deg); }
+}

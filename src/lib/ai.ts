@@ -5,7 +5,7 @@ import OpenAI from 'openai'
 // works end-to-end when only an OpenAI key is available.
 export type AIProvider = 'claude' | 'openai'
 
-const CLAUDE_MODEL = 'claude-opus-5'
+const CLAUDE_MODEL = 'claude-opus-4-5'
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
 export function hasAnthropicKey() {

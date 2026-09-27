@@ -58,7 +58,7 @@ export default function SessionPage() {
 
         const { data: intel } = await supabase
           .from('niche_intelligence')
-          .select('winning_format, topic_clusters')
+          .select('*')
           .eq('niche', profile.niche)
           .eq('week_of', weekOf)
           .maybeSingle()
@@ -72,6 +72,7 @@ export default function SessionPage() {
         return {
           question: session.question || '',
           winningFormat: intel?.winning_format,
+          insight: intel?.insight_summary,
           transcript: session.transcript || '',
           draftPost: session.final_post || session.draft_post || '',
           photoUrl,
@@ -109,6 +110,12 @@ export default function SessionPage() {
       async removePhoto() {
         current.photoPath = null
         await supabase.from('weekly_sessions').update({ photo_path: null }).eq('id', current.sessionId)
+      },
+
+      async recommendPhoto() {
+        const res = await fetch(`/api/session/photo-recommendation?session_id=${current.sessionId}`)
+        if (!res.ok) throw new Error('Photo recommendation failed')
+        return res.json()
       },
 
       publish(post) {

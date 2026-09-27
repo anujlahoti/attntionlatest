@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/Input'
 import { MuseBubble, Typing, UserBubble } from './Bubbles'
 import LinkedInPreview from './LinkedInPreview'
 import VoiceRecorder from './VoiceRecorder'
+import PhotoRecCard from './PhotoRecCard'
+import { PhotoRecommendation } from '@/types'
 
 export interface PublishResult {
   success: boolean
@@ -40,6 +42,7 @@ export interface SessionAdapter {
   generate: (transcript: string) => Promise<{ post: string; preview?: boolean }>
   uploadPhoto: (file: File) => Promise<string>
   removePhoto: () => Promise<void>
+  recommendPhoto: (post: string) => Promise<PhotoRecommendation & { preview?: boolean }>
   publish: (post: string) => Promise<PublishResult>
   markPosted: (post: string) => Promise<void>
 }
@@ -62,6 +65,8 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState('')
+  const [photoRec, setPhotoRec] = useState<(PhotoRecommendation & { preview?: boolean }) | null>(null)
+  const [photoRecLoading, setPhotoRecLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [result, setResult] = useState<PublishResult | null>(null)
   const [copied, setCopied] = useState(false)
@@ -69,6 +74,18 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
   const [posted, setPosted] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  async function loadPhotoRec(post: string) {
+    setPhotoRec(null)
+    setPhotoRecLoading(true)
+    try {
+      setPhotoRec(await adapter.recommendPhoto(post))
+    } catch {
+      // The card still offers the upload button without a recommendation.
+    } finally {
+      setPhotoRecLoading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -84,7 +101,10 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
           setPosted(true)
           setResult({ success: true })
           setStage('done')
-        } else if (snap.draftPost) setStage('review')
+        } else if (snap.draftPost) {
+          setStage('review')
+          if (!snap.photoUrl) loadPhotoRec(snap.draftPost)
+        }
         else if (snap.transcript) setStage('answer')
         else setStage('question')
       })
@@ -113,6 +133,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
       setIsPreview(!!preview)
       setEditing(false)
       setStage('review')
+      if (!photoUrl) loadPhotoRec(post)
     } catch {
       setDraftError('I could not turn that into a post just now. Give it another go.')
       setStage('answer')
@@ -322,6 +343,17 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
               {photoError && <p className="mt-2 text-sm font-medium text-terracotta">{photoError}</p>}
             </div>
           </div>
+
+          {stage === 'review' && !photoUrl && !editing && (
+            <div className="sm:pl-14">
+              <PhotoRecCard
+                rec={photoRec}
+                loading={photoRecLoading}
+                uploading={photoBusy}
+                onUpload={() => photoInputRef.current?.click()}
+              />
+            </div>
+          )}
 
           {stage === 'review' && (
             <div className="sm:pl-14 fade-up">

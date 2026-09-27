@@ -11,6 +11,8 @@ import OnboardingShell from '@/components/onboarding/OnboardingShell'
 import ProfessionPicker from '@/components/onboarding/ProfessionPicker'
 import GoalPicker from '@/components/onboarding/GoalPicker'
 import SessionFlow, { SessionAdapter } from '@/components/session/SessionFlow'
+import DeepProfileQuiz from '@/components/onboarding/DeepProfileQuiz'
+import { DeepProfile } from '@/lib/profile'
 import { BrandContext } from '@/types'
 
 interface DemoProfile {
@@ -19,6 +21,7 @@ interface DemoProfile {
   company: string
   goals: string[]
   brandContext: BrandContext
+  deep: DeepProfile
 }
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
@@ -33,21 +36,30 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 }
 
 export default function DemoPage() {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [profile, setProfile] = useState<DemoProfile>({
     name: '',
     profession: '',
     company: '',
     goals: [],
     brandContext: {},
+    deep: {},
   })
   const [website, setWebsite] = useState('')
   const [readingSite, setReadingSite] = useState(false)
 
   const adapter = useMemo<SessionAdapter | null>(() => {
-    if (step !== 4) return null
+    if (step !== 5) return null
     // Filled in by load(); used when drafting the post.
-    const intelRef = { winningFormat: '', winningHook: '' }
+    const intelRef = { winningFormat: '', winningHook: '', topicClusters: [] as string[] }
+    // Everything the demo APIs need to write for this visitor.
+    const who = {
+      name: profile.name,
+      profession: profile.profession,
+      goals: profile.goals,
+      brandContext: profile.brandContext,
+      ...profile.deep,
+    }
 
     return {
       userName: profile.name || 'You',
@@ -61,9 +73,11 @@ export default function DemoPage() {
           winningFormat: string
           winningHook: string
           insight: string
-        }>('/api/demo/question', { profession: profile.profession, goals: profile.goals })
+          topicClusters: string[]
+        }>('/api/demo/question', who)
         intelRef.winningFormat = intel.winningFormat
         intelRef.winningHook = intel.winningHook
+        intelRef.topicClusters = intel.topicClusters ?? []
         return { question: intel.question, winningFormat: intel.winningFormat, insight: intel.insight }
       },
 
@@ -78,9 +92,7 @@ export default function DemoPage() {
       async generate(transcript) {
         const { draftPost, preview } = await postJSON<{ draftPost: string; preview?: boolean }>('/api/demo/generate', {
           transcript,
-          profession: profile.profession,
-          goals: profile.goals,
-          brandContext: profile.brandContext,
+          ...who,
           ...intelRef,
         })
         return { post: draftPost, preview }
@@ -91,6 +103,10 @@ export default function DemoPage() {
       },
 
       async removePhoto() {},
+
+      recommendPhoto(post) {
+        return postJSON('/api/demo/photo-recommendation', { post, ...who })
+      },
 
       async publish() {
         return {
@@ -120,7 +136,7 @@ export default function DemoPage() {
 
   if (step === 1) {
     return (
-      <OnboardingShell step={1} total={3} title="Hello. I'm your muse." subtitle="A live demo, no account needed. Who am I painting?">
+      <OnboardingShell step={1} total={4} title="Hello. I'm your muse." subtitle="A live demo, no account needed. Who am I painting?">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -163,7 +179,7 @@ export default function DemoPage() {
 
   if (step === 2) {
     return (
-      <OnboardingShell step={2} total={3} title="What should LinkedIn do for you?" subtitle="Pick up to three.">
+      <OnboardingShell step={2} total={4} title="What should LinkedIn do for you?" subtitle="Pick up to three.">
         <GoalPicker
           selected={profile.goals}
           onToggle={(id) =>
@@ -187,7 +203,7 @@ export default function DemoPage() {
     return (
       <OnboardingShell
         step={3}
-        total={3}
+        total={4}
         title="Where can I learn your voice?"
         subtitle="Drop your website and I'll pick up your tone and topics. Optional."
         thinking={readingSite}
@@ -217,6 +233,20 @@ export default function DemoPage() {
             </div>
           )}
         </div>
+      </OnboardingShell>
+    )
+  }
+
+  if (step === 4) {
+    return (
+      <OnboardingShell step={4} title="Now the fun part." subtitle="Seven quick taps so I can ask you questions only you can answer.">
+        <DeepProfileQuiz
+          initial={profile.deep}
+          onComplete={(deep) => {
+            setProfile((p) => ({ ...p, deep }))
+            setStep(5)
+          }}
+        />
       </OnboardingShell>
     )
   }

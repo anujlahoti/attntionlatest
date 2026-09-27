@@ -1,10 +1,7 @@
 import { scrapeLinkedInTopContent, ScrapedPost } from './apify'
-import { analyzeNichePosts, generateWeeklyQuestion, NicheAnalysis } from './content'
-import { fallbackQuestion } from './preview-writer'
-import { currentWeekOf } from './week'
+import { analyzeNichePosts, NicheAnalysis } from './content'
 
 export interface WeeklyIntelligence extends NicheAnalysis {
-  question: string
   posts: ScrapedPost[]
 }
 
@@ -66,32 +63,25 @@ export function analyzeHeuristically(posts: ScrapedPost[]): NicheAnalysis {
     winning_format: winningFormat,
     winning_hook: hooks[0]?.[0] ?? 'opens with a specific moment',
     topic_clusters: words.slice(0, 4).map(([w]) => w),
-    insight: `${share}% of this week's top posts in your niche use the "${winningFormat}" format.`,
+    insight_summary: `${share}% of this week's top posts in your niche use the "${winningFormat}" format.`,
   }
 }
 
-export async function buildWeeklyIntelligence(
-  niche: string,
-  nicheSlug: string,
-  goals: string[]
-): Promise<WeeklyIntelligence> {
+// The shared, per-niche half of the weekly study. Questions are personal and
+// are generated per user on top of this (see drafting.personalQuestion).
+export async function buildWeeklyIntelligence(niche: string, nicheSlug: string): Promise<WeeklyIntelligence> {
   const posts = await scrapeLinkedInTopContent(nicheSlug)
 
   let analysis: NicheAnalysis
   try {
-    analysis = await analyzeNichePosts(posts.slice(0, 12).map((p) => p.text), niche)
+    analysis = await analyzeNichePosts(
+      posts.slice(0, 12).map((p) => ({ text: p.text, likes: p.reactions, comments: p.comments })),
+      niche
+    )
   } catch (err) {
     console.error('AI niche analysis failed, using heuristic analysis', err)
     analysis = analyzeHeuristically(posts)
   }
 
-  let question = ''
-  try {
-    question = await generateWeeklyQuestion(analysis.winning_format, niche, goals)
-  } catch (err) {
-    console.error('Question generation failed, using question bank', err)
-  }
-  question ||= fallbackQuestion(analysis.winning_format, `${niche}:${currentWeekOf()}`)
-
-  return { ...analysis, question, posts }
+  return { ...analysis, posts }
 }

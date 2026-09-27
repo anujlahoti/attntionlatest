@@ -79,6 +79,11 @@ export async function databaseStatus(): Promise<IntegrationStatus> {
         fallback: `Schema not applied (missing: ${[...missing, ...(bucket ? [] : ['session-files bucket'])].join(', ')}). Run supabase/schema.sql.`,
       }
     }
+    // patch-002: deep profile columns used by onboarding step 4.
+    const { error: deepError } = await admin.from('users').select('profile_type, linkedin_fear').limit(1)
+    if (deepError) {
+      return { ...base, live: false, fallback: 'Deep profile columns missing. Run supabase/patch-002-deep-profile.sql.' }
+    }
     return { ...base, live: true, fallback: '' }
   } catch {
     return { ...base, live: false, fallback: 'Could not reach Supabase' }

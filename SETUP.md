@@ -75,8 +75,12 @@ Only Supabase is required. Every other integration has a fallback, and the dashb
 `/demo` runs the whole flow with no account (nothing is saved), which is handy when Supabase's
 built-in email sender hits its rate limit on magic links.
 
-If you ran `schema.sql` before the photo-replace policy was added, also run
-`supabase/patch-001-photo-upsert.sql`.
+If you ran `schema.sql` before these were added, also run the patches (each is safe to re-run):
+
+- `supabase/patch-001-photo-upsert.sql`: lets users replace their weekly photo.
+- `supabase/patch-002-deep-profile.sql`: the v2 deep-profile columns (onboarding step 4) and
+  `niche_intelligence.insight_summary`. Until it runs, the quiz shows a message asking for it and the
+  status panel flags it; everything else keeps working.
 
 ## Notes on this build
 

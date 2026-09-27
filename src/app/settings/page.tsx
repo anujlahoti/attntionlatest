@@ -10,6 +10,9 @@ import Badge from '@/components/ui/Badge'
 import { Placard } from '@/components/ui/Art'
 import ProfessionPicker from '@/components/onboarding/ProfessionPicker'
 import GoalPicker from '@/components/onboarding/GoalPicker'
+import Link from 'next/link'
+import { buttonClasses } from '@/components/ui/Button'
+import { DEEP_PROFILE_FIELDS, DeepProfile, PROFILE_CARDS } from '@/lib/profile'
 
 interface Profile {
   id: string
@@ -21,6 +24,7 @@ interface Profile {
   brand_context: BrandContext
   goals: string[]
   blotato_linkedin_profile_id: string
+  deep: DeepProfile
 }
 
 type Saving = '' | 'profile' | 'goals' | 'brand' | 'linkedin'
@@ -47,6 +51,7 @@ export default function SettingsPage() {
         brand_context: data?.brand_context ?? {},
         goals: data?.goals ?? [],
         blotato_linkedin_profile_id: data?.blotato_linkedin_profile_id ?? '',
+        deep: Object.fromEntries(DEEP_PROFILE_FIELDS.filter((f) => data?.[f] != null && data[f] !== '').map((f) => [f, data![f]])),
       })
     })
   }, [])
@@ -172,7 +177,14 @@ export default function SettingsPage() {
             </Button>
           </Section>
 
-          <Section numeral="IV" title="Auto-posting" subtitle="Connect LinkedIn through Blotato so your muse can publish for you.">
+          <Section numeral="IV" title="The deep profile" subtitle="Your quiz answers. They shape every weekly question and post.">
+            <DeepProfileSummary deep={profile.deep} />
+            <Link href="/onboarding/profile?from=settings" className={buttonClasses('primary', 'md', 'mt-6')}>
+              {Object.keys(profile.deep).length ? 'Retake the quiz' : 'Take the quiz'} →
+            </Link>
+          </Section>
+
+          <Section numeral="V" title="Auto-posting" subtitle="Connect LinkedIn through Blotato so your muse can publish for you.">
             <ol className="text-sm text-ink-soft list-decimal pl-5 space-y-1">
               <li>Create a Blotato account and connect your LinkedIn.</li>
               <li>In Blotato, open Social Profiles → LinkedIn and copy the Profile ID.</li>
@@ -219,5 +231,27 @@ function Section({
       <p className="mt-1 text-sm text-ink-soft">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
+  )
+}
+
+function DeepProfileSummary({ deep }: { deep: DeepProfile }) {
+  const rows = PROFILE_CARDS.filter((c) => deep[c.field] != null).map((c) => {
+    const raw = deep[c.field]
+    const values = Array.isArray(raw) ? raw : [raw as string]
+    const labels = values.map((v) => c.options?.find((o) => o.value === v)?.label ?? v)
+    return { question: c.question, answer: labels.join(' · ') }
+  })
+  if (!rows.length) {
+    return <p className="text-sm text-ink-soft">You haven&apos;t taken the quiz yet. Seven taps, and your questions get much sharper.</p>
+  }
+  return (
+    <dl className="grid gap-4 sm:grid-cols-2">
+      {rows.map((r) => (
+        <div key={r.question} className="bg-paper-deep border-2 border-ink cut-sm p-3">
+          <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">{r.question}</dt>
+          <dd className="mt-1 text-sm font-semibold">{r.answer}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }

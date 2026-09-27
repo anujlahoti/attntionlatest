@@ -1,12 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { ensureNicheIntelligence, ensureWeeklySession } from '@/lib/weekly'
+import { prepareUserWeek } from '@/lib/weekly'
 import { getPostAnalytics } from '@/lib/blotato'
 import { NextResponse } from 'next/server'
 
 export const maxDuration = 300
 
 // Runs from Vercel Cron (see vercel.json). Prepares this week's question for every
-// onboarded user (one scrape per niche, shared) and refreshes post analytics.
+// onboarded user and refreshes post analytics.
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET
   if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) {
@@ -14,29 +14,19 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient()
-  const { data: users } = await admin
-    .from('users')
-    .select('id, niche, linkedin_niche_slug, goals')
-    .eq('onboarding_complete', true)
+  const { data: users } = await admin.from('users').select('*').eq('onboarding_complete', true)
 
-  const byNiche = new Map<string, { slug: string; goals: string[]; ids: string[] }>()
-  for (const u of users ?? []) {
-    const niche = u.niche || 'Startup Founder'
-    const entry = byNiche.get(niche) ?? { slug: u.linkedin_niche_slug || 'entrepreneurship', goals: u.goals || [], ids: [] as string[] }
-    entry.ids.push(u.id)
-    byNiche.set(niche, entry)
-  }
-
+  // Niche intelligence is cached per niche, so this scrapes once per niche and
+  // then writes each user a personal question.
+  const niches = new Set<string>()
   let sessionsPrepared = 0
-  for (const [niche, { slug, goals, ids }] of byNiche) {
+  for (const u of users ?? []) {
     try {
-      const intel = await ensureNicheIntelligence(admin, niche, slug, goals)
-      for (const id of ids) {
-        await ensureWeeklySession(admin, id, intel.generated_question)
-        sessionsPrepared++
-      }
+      await prepareUserWeek(admin, admin, u)
+      niches.add(u.niche || 'Startup Founder')
+      sessionsPrepared++
     } catch (err) {
-      console.error(`Weekly prep failed for niche ${niche}`, err)
+      console.error(`Weekly prep failed for user ${u.id}`, err)
     }
   }
 
@@ -58,5 +48,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ niches: byNiche.size, sessionsPrepared, analyticsPulled })
+  return NextResponse.json({ niches: niches.size, sessionsPrepared, analyticsPulled })
 }

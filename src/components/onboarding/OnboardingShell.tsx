@@ -11,11 +11,12 @@ const PANELS = [
   { bg: 'bg-rose', note: 'Every portrait starts with a sitting. Tell me who I am painting.' },
   { bg: 'bg-ochre', note: 'A painting needs a purpose. What should your posts do for you?' },
   { bg: 'bg-cobalt text-paper', note: 'Your words, your colours. Show me where your brand lives.' },
+  { bg: 'bg-olive text-paper', note: 'The better I know you, the better my questions. Seven quick taps.' },
 ]
 
 export default function OnboardingShell({
   step,
-  total = 3,
+  total = 4,
   title,
   subtitle,
   thinking = false,

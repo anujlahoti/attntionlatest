@@ -12,7 +12,20 @@ export interface User {
   onboarding_complete: boolean
   blotato_linkedin_profile_id: string
   created_at: string
+  // Deep profile (onboarding step 4)
+  profile_type?: ProfileType
+  industry?: string
+  company_stage?: string
+  core_function?: string
+  consulting_focus?: string
+  career_goal?: string
+  content_angles?: string[]
+  target_audience?: string[]
+  communication_tone?: string
+  linkedin_fear?: string
 }
+
+export type ProfileType = 'founder' | 'executive' | 'professional' | 'freelancer' | 'earlycareer'
 
 export interface BrandContext {
   primary_color?: string
@@ -47,7 +60,14 @@ export interface NicheIntelligence {
   topic_clusters: string[]
   sample_posts: SamplePost[]
   generated_question: string
+  insight_summary?: string
   updated_at: string
+}
+
+export interface PhotoRecommendation {
+  recommendation: string
+  why: string
+  shot_options: { type: string; description: string; tip: string }[]
 }
 
 export interface SamplePost {

@@ -20,10 +20,7 @@ export default function OnboardingBrand() {
       body: JSON.stringify({ websiteUrl: url }),
     })
 
-    setLoadingLabel('Studying your niche…')
-    // Fire the (potentially 60s+) niche intelligence job without blocking navigation.
-    fetch('/api/intelligence/run', { method: 'POST' }).catch(() => {})
-    router.push('/dashboard')
+    router.push('/onboarding/profile')
   }
 
   return (
@@ -51,7 +48,7 @@ export default function OnboardingBrand() {
         ) : (
           <div className="flex flex-col sm:flex-row gap-4">
             <Button size="lg" onClick={() => finish(websiteUrl.trim())} disabled={!websiteUrl.trim()}>
-              Learn my brand &amp; finish →
+              Learn my brand &amp; continue →
             </Button>
             <Button size="lg" variant="ghost" onClick={() => finish('')}>
               Skip for now
