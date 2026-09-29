@@ -1,15 +1,14 @@
-import { FALLBACK_CTAS, HashtagAuthor, pickHashtags } from './post-format'
+import { HashtagAuthor } from './post-format'
 import { Niche } from './niches'
 import { DeepProfile } from './profile'
 
 // ─── Offline post writer ─────────────────────────────────────────────────────
-// A no-AI fallback that assembles a LinkedIn-shaped draft from the user's own
-// words: hook first, one idea per line, lesson last, then a CTA and hashtags.
-// Used only when the AI provider is unavailable, and flagged as a sketch in the UI.
+// Shared text helpers for the offline path (sentence splitting, clean-up) and
+// the offline question bank. The offline post itself is composed by the
+// rule-based strategist (strategist.ts).
 
 const FILLERS =
   /\b(?:um+|uh+|erm|you know|i mean|kind of|sort of|basically|literally|honestly|yaar|lol|i guess|so yeah|ok so|okay so)\b,?\s*/gi
-const LESSON = /\b(learn|learnt|learned|realis|realiz|lesson|taught|the truth is|what matters|turns out)/i
 // Abbreviations whose full stop must not end a sentence ("Mr. Pillai").
 const ABBREVIATIONS = /\b(Mr|Mrs|Ms|Dr|Prof|Rs|St|Sr|Jr|vs|etc|approx|no)\.(?=\s)/gi
 const ABBR_MARK = '․'
@@ -19,7 +18,7 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-function maskProfanity(s: string) {
+export function maskProfanity(s: string) {
   return s.replace(PROFANITY, (w) => w[0] + '*'.repeat(Math.max(2, w.length - 1)))
 }
 
@@ -43,6 +42,7 @@ export function toSentences(text: string): string[] {
     .replace(ABBREVIATIONS, (m) => m.slice(0, -1) + ABBR_MARK)
     .replace(FILLERS, '')
     .replace(/,\s*like,\s*/gi, ', ')
+    .replace(/\blike\s+(?=\d)/gi, 'about ')
     .replace(/\s*[—–]\s*/g, ', ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -67,45 +67,8 @@ export function toSentences(text: string): string[] {
   return sentences
 }
 
-function pickHook(sentences: string[]): number {
-  const notI = (s: string) => !/^I\b/.test(s)
-  const numbered = sentences.findIndex((s) => /\d/.test(s) && s.split(' ').length <= 14 && notI(s))
-  if (numbered >= 0) return numbered
-  const early = sentences.slice(0, 3).findIndex(notI)
-  return early >= 0 ? early : 0
-}
-
 export interface PreviewAuthor extends HashtagAuthor {
   goals?: string[]
-}
-
-// Hook + Content + CTA + Hashtags, assembled from the user's own words.
-export function writePreviewPost(transcript: string, author: PreviewAuthor, niche: Niche): string {
-  const sentences = toSentences(transcript).map(maskProfanity)
-  if (!sentences.length) return maskProfanity(transcript.trim())
-
-  const hookIndex = pickHook(sentences)
-  const hook = sentences[hookIndex]
-  const rest = sentences.filter((_, i) => i !== hookIndex)
-
-  const lessonIndex = rest.findIndex((s) => LESSON.test(s))
-  const lesson = lessonIndex >= 0 ? rest.splice(lessonIndex, 1)[0] : null
-
-  // One idea per line; pair up very short sentences so it doesn't read choppy.
-  const body: string[] = []
-  let words = hook.split(' ').length
-  for (const s of rest) {
-    const count = s.split(' ').length
-    if (words + count > 250) break
-    words += count
-    const prev = body[body.length - 1]
-    if (prev && prev.split(' ').length < 8 && count < 8) body[body.length - 1] = `${prev} ${s}`
-    else body.push(s)
-  }
-
-  const cta = FALLBACK_CTAS[author.goals?.[0] ?? ''] ?? FALLBACK_CTAS.visibility
-  const hashtags = pickHashtags(niche, author).join(' ')
-  return [hook, ...body, ...(lesson ? [lesson] : []), cta, hashtags].join('\n\n')
 }
 
 // ─── Offline question bank ───────────────────────────────────────────────────

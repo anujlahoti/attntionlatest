@@ -23,5 +23,5 @@ export async function POST(request: Request) {
     },
     demoProfile(body)
   )
-  return NextResponse.json({ draftPost: draft.post, preview: draft.preview, flags: draft.flags })
+  return NextResponse.json({ draftPost: draft.post, preview: draft.preview, flags: draft.flags, strategy: draft.strategy })
 }

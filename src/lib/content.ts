@@ -80,72 +80,6 @@ ${avoid ? `They asked for a different question than this one, so ask about somet
   return clean(text)
 }
 
-// ─── 3. Generate the LinkedIn post ──────────────────────────────────────────
-export async function generateLinkedInPost(
-  transcript: string,
-  nicheIntel: Pick<NicheAnalysis, 'winning_format' | 'winning_hook' | 'topic_clusters'>,
-  user: PostAuthor,
-  revisionNote?: string,
-  niche?: Niche
-) {
-  const text = await generateText(`You are an elite LinkedIn ghostwriter and content strategist. You have written hundreds of viral LinkedIn posts for professionals in the ${user.industry || user.niche} space. You know how real people in this industry think, speak, and tell stories.
-
-You have just received a raw voice note transcript from your client. Your job is to transform it into a high-performing LinkedIn post, without losing their voice, their authenticity, or their original meaning.
-
-━━━ WHO YOUR CLIENT IS ━━━
-${buildPersonContext(user)}
-
-━━━ WHAT IS WORKING IN THEIR NICHE THIS WEEK ━━━
-Format: ${nicheIntel.winning_format}
-Hook type: ${nicheIntel.winning_hook}
-Hot topics: ${nicheIntel.topic_clusters.join(', ')}
-
-━━━ RAW VOICE NOTE TRANSCRIPT ━━━
-${transcript}
-
-━━━ YOUR TASK ━━━
-
-Transform this transcript into a LinkedIn post using this EXACT structure:
-
-HOOK (1-2 lines)
-- Use the winning hook type above
-- Must stop the scroll: make the reader think "I need to read this"
-- Use the client's actual words where possible: their phrasing, not yours
-- Do NOT start with "I" (LinkedIn's algorithm penalises this)
-- Do NOT use hollow openers like "Hot take:" or "Unpopular opinion:"
-
-CONTENT BODY (4-8 short paragraphs)
-- Use the winning format above
-- Keep paragraphs 1-3 lines max (LinkedIn reading pattern)
-- Use line breaks generously: white space increases read rate
-- Preserve the client's voice: their vocabulary, their rhythm, their specifics
-- Fix grammatical errors and filler words ("um", "like", "you know", "basically") silently
-- Preserve emotional truth: if they sound uncertain, keep the uncertainty; if they sound proud, keep the pride
-- Include specific details (names, numbers, dates, places) from their transcript: specificity is credibility
-- Do NOT add details that aren't in the transcript
-- If the transcript is in another language or mixes languages (e.g. Hinglish), write the post in natural English while keeping their meaning, phrasing and specifics
-- Never include private people's full names, patients' health details, or clients' confidential figures; describe them by role instead ("a client", "one of our patients")
-
-CTA (1-2 lines)
-${buildCTAGuidance(user.goals)}
-
-HASHTAGS (on a new line at the end)
-${niche ? buildHashtagGuidance(niche, user) : 'Use 4-6 relevant hashtags on one line at the end.'}
-
-━━━ QUALITY RULES ━━━
-- The post must sound like it was written BY this person, not FOR them
-- Reading it back, they should think "yes, that's exactly what I said, just better"
-- No corporate buzzwords. No LinkedIn clichés ("game-changer", "excited to share", "humbled", "blessed")
-- No bullet points in the hook
-- No em-dashes
-- Total length: 150-300 words (not counting hashtags)
-- The post must be complete (hook, body, CTA, hashtags) every time
-- Do not label the sections; write the post exactly as it should appear on LinkedIn
-${revisionNote ? `\nNOTE: The previous draft had these issues: ${revisionNote}. Fix them in this version.\n` : ''}
-Return ONLY the finished post. No explanation, no preamble, no alternatives.`)
-  return clean(text)
-}
-
 // ─── 4. Photo recommendation ────────────────────────────────────────────────
 export async function generatePhotoRecommendation(post: string, user: PersonContextInput) {
   return generateJSON<PhotoRecommendation>(`You are a LinkedIn visual content strategist. You know that posts with authentic personal photos get far more engagement than stock photos or no image.
@@ -237,4 +171,78 @@ ${post}
 
 Return only the rewritten post.`)
   return text.trim()
+}
+
+// ─── 7. Strategist-led writing (brief → post → critique) ─────────────────────
+export async function writePostFromBrief(
+  transcript: string,
+  brief: import('./strategist').StrategyBrief,
+  user: PostAuthor,
+  niche: Niche,
+  revisionNote?: string
+) {
+  const hook = brief.hook_options[brief.chosen_hook]?.text ?? brief.hook_options[0]?.text
+  const text = await generateText(`You are an elite LinkedIn ghostwriter. A senior strategist has already decided what this post is. Your job is to write it so it earns reach: stop the scroll, deliver value to the reader, and sound like the author on their best day.
+
+This is NOT a transcription job. The voice note is raw material. Restructure it, cut what doesn't serve the angle, sharpen every line, and make the reader feel the story and walk away with something useful.
+
+AUTHOR
+${buildPersonContext(user)}
+
+STRATEGIST'S BRIEF
+- Angle: ${brief.angle}
+- Core insight for the reader: ${brief.core_insight}
+- Why their audience should care: ${brief.audience_takeaway}
+- Framework: ${brief.framework}
+- Beats, in order: ${brief.framework_steps.map((s, i) => `${i + 1}) ${s}`).join(' ')}
+- Opening hook (use it, you may tighten it): "${hook}"
+- Specifics to include: ${brief.key_specifics.join('; ') || 'use the concrete details from the note'}
+- Lines to keep in their own words: ${brief.quotes_to_keep.map((q) => `"${q}"`).join(' ') || 'none required'}
+
+RAW VOICE NOTE (for facts and voice only)
+"""${transcript}"""
+
+WRITING RULES
+- Follow the framework's beats in order; each beat is 1-3 short lines
+- The line after the hook must make them click "see more" (tension, stakes or a promise)
+- Turn the story into value: at the end, state the insight as something the reader can use, in 1-3 lines (a short list with → is fine)
+- Every number, timeframe and place must come from the note; never invent facts, results or quotes
+- Keep 1-2 of their vivid phrases verbatim; rewrite the rest for clarity and rhythm in their voice and tone (${user.communication_tone || 'direct and warm'})
+- If the note mixes languages, write in natural English
+- Never include private people's names, patients' health details or clients' confidential figures: use roles ("a client", "one of our patients")
+- No clichés ("game-changer", "excited to share", "humbled", "let that sink in"), no em-dashes, no hashtags in the body
+- 150-300 words before the hashtags; line breaks between every 1-3 sentences
+
+CTA (1-2 lines)
+${buildCTAGuidance(user.goals)}
+
+HASHTAGS (last line)
+${buildHashtagGuidance(niche, user)}
+${revisionNote ? `\nAN EDITOR REVIEWED THE LAST DRAFT. Fix these points: ${revisionNote}\n` : ''}
+Return only the finished post, exactly as it should appear on LinkedIn.`)
+  return clean(text)
+}
+
+export interface PostCritique {
+  scores: { hook: number; specificity: number; value: number; skimmability: number; voice: number }
+  feedback: string
+}
+
+export async function critiquePost(post: string, brief: import('./strategist').StrategyBrief, transcript: string) {
+  return generateJSON<PostCritique>(`You are a LinkedIn editor who has reviewed thousands of posts for reach. Score this draft 1-10 on each dimension, then give the author's ghostwriter the 1-3 most valuable fixes.
+
+- hook: would a busy reader stop scrolling and click "see more"?
+- specificity: concrete details (numbers, moments) instead of generalities
+- value: does the reader walk away with an insight they can use?
+- skimmability: short lines, white space, clear flow
+- voice: sounds like a real person, no clichés, true to the voice note (no invented facts)
+
+The intended angle: ${brief.angle}
+The voice note it is based on: """${transcript.slice(0, 2500)}"""
+
+DRAFT:
+"""${post}"""
+
+Return JSON: {"scores": {"hook": n, "specificity": n, "value": n, "skimmability": n, "voice": n}, "feedback": "specific fixes, or empty if all scores are 8+"}
+Return only valid JSON.`)
 }

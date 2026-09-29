@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { currentWeekOf } from '@/lib/week'
 import { resolveNiche } from '@/lib/niches'
+import type { StrategyBrief } from '@/lib/strategist'
 import SessionFlow, { SessionAdapter } from '@/components/session/SessionFlow'
 import AppHeader from '@/components/dashboard/AppHeader'
 import { clearHandoffDraft, readHandoff } from '@/lib/demo-handoff'
@@ -110,11 +111,11 @@ export default function SessionPage() {
       },
 
       async generate(transcript) {
-        const { draftPost, preview } = await postJSON<{ draftPost: string; preview?: boolean }>('/api/session/generate', {
+        const { draftPost, preview, strategy } = await postJSON<{ draftPost: string; preview?: boolean; strategy?: StrategyBrief }>('/api/session/generate', {
           sessionId: current.sessionId,
           transcript,
         })
-        return { post: draftPost, preview }
+        return { post: draftPost, preview, strategy }
       },
 
       async uploadPhoto(file) {

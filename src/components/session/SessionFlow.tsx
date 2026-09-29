@@ -12,6 +12,8 @@ import LinkedInPreview from './LinkedInPreview'
 import VoiceRecorder from './VoiceRecorder'
 import PhotoRecCard from './PhotoRecCard'
 import SafetyCard from './SafetyCard'
+import StrategyCard from './StrategyCard'
+import type { StrategyBrief } from '@/lib/strategist'
 import { checkPost } from '@/lib/safety'
 import { PhotoRecommendation } from '@/types'
 
@@ -42,7 +44,7 @@ export interface SessionAdapter {
   exitLabel: string
   load: () => Promise<SessionSnapshot>
   transcribe: (audio: Blob, filename: string) => Promise<string>
-  generate: (transcript: string) => Promise<{ post: string; preview?: boolean }>
+  generate: (transcript: string) => Promise<{ post: string; preview?: boolean; strategy?: StrategyBrief }>
   uploadPhoto: (file: File) => Promise<string>
   removePhoto: () => Promise<void>
   recommendPhoto: (post: string) => Promise<PhotoRecommendation & { preview?: boolean }>
@@ -78,6 +80,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
   const [draft, setDraft] = useState('')
   const [draftError, setDraftError] = useState('')
   const [isPreview, setIsPreview] = useState(false)
+  const [strategy, setStrategy] = useState<StrategyBrief | null>(null)
   const [editing, setEditing] = useState(false)
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
@@ -160,9 +163,10 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
     setDraftError('')
     setStage('drafting')
     try {
-      const { post, preview } = await adapter.generate(text)
+      const { post, preview, strategy: brief } = await adapter.generate(text)
       setDraft(post)
       setIsPreview(!!preview)
+      setStrategy(brief ?? null)
       setEditing(false)
       setStage('review')
       if (!photoUrl) loadPhotoRec(post)
@@ -426,12 +430,23 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
               : 'Here is your draft. I kept your phrasing and matched the winning format. Tweak anything, add a real photo, then post.'}
             {isPreview && stage === 'review' && (
               <p className="mt-3 border-l-4 border-ochre bg-ochre/15 px-3 py-2 text-xs text-ink-soft">
-                <strong>Sketch mode.</strong> The AI writer is offline, so I arranged this from your own words. Edit freely,
-                or hit Rewrite once AI is back.
+                <strong>Sketch mode.</strong> The AI strategist is offline, so a rule-based strategist restructured your answer
+                into a proven story framework. The full strategist (sharper hooks, a clear takeaway for your audience, 150-300
+                words, an editor pass) switches on once the AI has credits.
                 {MIXED_LANGUAGE.test(transcript) && ' Your answer mixes languages; with AI on, I write it in English and keep your phrasing.'}
               </p>
             )}
           </MuseBubble>
+
+          {stage === 'review' && strategy && !editing && (
+            <div className="sm:pl-14">
+              <StrategyCard
+                strategy={strategy}
+                currentHook={draft.split(/\n\s*\n/)[0] ?? ''}
+                onUseHook={(hook) => setDraft([hook.replace(/…$/, '.'), ...draft.split(/\n\s*\n/).slice(1)].join('\n\n'))}
+              />
+            </div>
+          )}
 
           <div className="sm:pl-14 fade-up">
             <div className="relative bg-paper-deep border-2 border-ink cut p-3 sm:p-5 shadow-ink">

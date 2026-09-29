@@ -14,6 +14,7 @@ import SessionFlow, { SessionAdapter } from '@/components/session/SessionFlow'
 import { saveHandoff } from '@/lib/demo-handoff'
 import { PROFILE_CARDS } from '@/lib/profile'
 import { BrandContext } from '@/types'
+import type { StrategyBrief } from '@/lib/strategist'
 
 interface DemoProfile {
   name: string
@@ -112,7 +113,7 @@ export default function DemoPage() {
       },
 
       async generate(transcript) {
-        const { draftPost, preview } = await postJSON<{ draftPost: string; preview?: boolean }>('/api/demo/generate', {
+        const { draftPost, preview, strategy } = await postJSON<{ draftPost: string; preview?: boolean; strategy?: StrategyBrief }>('/api/demo/generate', {
           transcript,
           ...who,
           winningFormat: state.winningFormat,
@@ -121,7 +122,7 @@ export default function DemoPage() {
         })
         // Kept so "Save my progress with an account" carries this draft over.
         saveHandoff({ profile: handoffProfile, question: state.question, transcript, draft: draftPost })
-        return { post: draftPost, preview }
+        return { post: draftPost, preview, strategy }
       },
 
       async anonymize(post) {

@@ -1,13 +1,15 @@
 import {
+  critiquePost,
   generateFollowUp,
-  generateLinkedInPost,
   generatePhotoRecommendation,
   generateWeeklyQuestion,
   NicheAnalysis,
   PostAuthor,
+  writePostFromBrief,
 } from './content'
+import { aiStrategy, composeFromStory, ruleStrategy, StrategyBrief } from './strategist'
 import { validatePost } from './post-validator'
-import { writePreviewPost, fallbackQuestion } from './preview-writer'
+import { fallbackQuestion } from './preview-writer'
 import { fallbackPhotoRecommendation } from './photo-fallback'
 import { PersonContextInput } from './profile'
 import { Niche, resolveNiche } from './niches'
@@ -23,28 +25,60 @@ export interface Draft {
   post: string
   preview: boolean
   flags: SafetyFlag[]
+  strategy: StrategyBrief
 }
 
-// Draft, check it follows Hook + Content + CTA + Hashtags, and quietly retry
-// once with the issues noted. The user only ever sees the loading state.
-// Falls back to the offline writer if every AI provider is unavailable.
+// Editor scores below this trigger one silent revision.
+const MIN_SCORE = 7
+
+// The content-strategist pipeline:
+//   1. Strategist: angle, framework, hook options (AI; rule-based as a fallback)
+//   2. Writer: writes the post from that brief (restructures, never transcribes)
+//   3. Editor: structure check + scores on hook, specificity, value, skimmability,
+//      voice; one silent revision with the editor's notes if anything is weak.
+// Without an AI provider, the rule-based strategist and composer still
+// restructure the answer into the chosen framework (flagged as sketch mode).
 export async function draftPost(transcript: string, intel: Intel, author: PostAuthor): Promise<Draft> {
   const niche = resolveNiche(author)
-  try {
-    let post = await generateLinkedInPost(transcript, intel, author, undefined, niche)
-    const validation = validatePost(post)
-    if (!validation.is_valid) {
-      if (process.env.NODE_ENV !== 'production') console.info('Draft failed validation, retrying:', validation.issues)
-      post = await generateLinkedInPost(transcript, intel, author, validation.issues.join('; '), niche)
+  const story = ruleStrategy(transcript, intel.winning_hook, niche, author)
+
+  if (aiProvider()) {
+    try {
+      let brief: StrategyBrief
+      try {
+        brief = await aiStrategy(transcript, intel, author, niche)
+      } catch (err) {
+        console.error('AI strategist failed, writing from the rule-based brief', err)
+        brief = story.brief
+      }
+
+      let post = await writePostFromBrief(transcript, brief, author, niche)
+
+      const notes: string[] = []
+      const validation = validatePost(post)
+      if (!validation.is_valid) notes.push(validation.issues.join('; '))
+      try {
+        const critique = await critiquePost(post, brief, transcript)
+        const weak = Object.entries(critique.scores ?? {}).filter(([, v]) => Number(v) < MIN_SCORE)
+        if (weak.length) notes.push(`Weak on ${weak.map(([k, v]) => `${k} (${v}/10)`).join(', ')}. ${critique.feedback ?? ''}`)
+      } catch (err) {
+        console.error('Editor pass failed, keeping the draft', err)
+      }
+      if (notes.length) {
+        if (process.env.NODE_ENV !== 'production') console.info('Revising draft:', notes.join(' | '))
+        post = await writePostFromBrief(transcript, brief, author, niche, notes.join(' '))
+      }
+
+      recordDraftOutcome(true)
+      return { post, preview: false, flags: checkPost(post), strategy: brief }
+    } catch (err) {
+      console.error('AI writing failed, using the rule-based strategist', err)
     }
-    recordDraftOutcome(true)
-    return { post, preview: false, flags: checkPost(post) }
-  } catch (err) {
-    console.error('Post generation failed, using preview writer', err)
-    recordDraftOutcome(false, aiProvider() ? 'AI provider errors' : 'no AI key configured')
-    const post = writePreviewPost(transcript, author, niche)
-    return { post, preview: true, flags: checkPost(post) }
   }
+
+  recordDraftOutcome(false, aiProvider() ? 'AI provider errors' : 'no AI key configured')
+  const post = composeFromStory(story, author, niche)
+  return { post, preview: true, flags: checkPost(post), strategy: story.brief }
 }
 
 // A question written for this specific person, on top of the shared niche analysis.

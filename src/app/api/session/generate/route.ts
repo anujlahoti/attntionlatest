@@ -51,5 +51,5 @@ export async function POST(request: Request) {
   await trackEvent(supabase, user.id, 'draft_shown', { preview: draft.preview, flags: draft.flags.length })
   if (draft.flags.length) await trackEvent(supabase, user.id, 'safety_flagged', { kinds: draft.flags.map((f) => f.kind) })
 
-  return NextResponse.json({ draftPost: draft.post, preview: draft.preview, flags: draft.flags })
+  return NextResponse.json({ draftPost: draft.post, preview: draft.preview, flags: draft.flags, strategy: draft.strategy })
 }
