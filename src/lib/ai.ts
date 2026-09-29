@@ -57,24 +57,39 @@ export async function generateText(prompt: string): Promise<string> {
   }
 }
 
+// Try every configured provider in order (Claude first), so one running out of
+// credits or erroring does not take the writer down while another still works.
 async function callProvider(prompt: string): Promise<string> {
-  const provider = aiProvider()
-  if (!provider) {
+  const providers: AIProvider[] = [...(hasAnthropicKey() ? ['claude' as const] : []), ...(hasOpenAIKey() ? ['openai' as const] : [])]
+  if (!providers.length) {
     throw new Error('No AI key configured. Add ANTHROPIC_API_KEY or OPENAI_API_KEY to .env.local.')
   }
 
-  if (provider === 'claude') {
-    const response = await anthropic().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 16000,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    return response.content
-      .flatMap((block) => (block.type === 'text' ? [block.text] : []))
-      .join('')
-      .trim()
+  let lastError: unknown
+  for (const provider of providers) {
+    try {
+      return provider === 'claude' ? await callClaude(prompt) : await callOpenAI(prompt)
+    } catch (err) {
+      lastError = err
+      console.error(`AI provider ${provider} failed${providers.length > 1 ? ', trying the next one' : ''}`, err)
+    }
   }
+  throw lastError
+}
 
+async function callClaude(prompt: string): Promise<string> {
+  const response = await anthropic().messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 16000,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  return response.content
+    .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+    .join('')
+    .trim()
+}
+
+async function callOpenAI(prompt: string): Promise<string> {
   const response = await openai().chat.completions.create({
     model: OPENAI_MODEL,
     messages: [{ role: 'user', content: prompt }],

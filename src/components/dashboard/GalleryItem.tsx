@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import AnalyticsCard from './AnalyticsCard'
+import ResultsForm from './ResultsForm'
 import { PostAnalytics, WeeklySession } from '@/types'
 
 const FRAMES = ['bg-rose', 'bg-ochre', 'bg-cobalt', 'bg-olive', 'bg-paper-deep']
@@ -66,6 +67,7 @@ export default function GalleryItem({
           <p className="mt-4 text-sm text-muted">No post was painted this week.</p>
         )}
         <AnalyticsCard analytics={analytics} />
+        {published && !analytics && <ResultsForm sessionId={session.id} />}
       </div>
     </article>
   )

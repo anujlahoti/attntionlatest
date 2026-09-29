@@ -3,14 +3,15 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { DEEP_PROFILE_FIELDS, DeepProfile } from '@/lib/profile'
+import { DEEP_PROFILE_FIELDS, DeepProfile, identityFields } from '@/lib/profile'
 import OnboardingShell from '@/components/onboarding/OnboardingShell'
 import DeepProfileQuiz from '@/components/onboarding/DeepProfileQuiz'
 
 function ProfileStep() {
   const router = useRouter()
-  // Opened from Settings to retake the quiz: go back there afterwards.
-  const fromSettings = useSearchParams().get('from') === 'settings'
+  // Opened from Settings or after a post ("sharpen next week's question"): go back there afterwards.
+  const from = useSearchParams().get('from')
+  const fromSettings = from === 'settings'
   const [initial, setInitial] = useState<DeepProfile | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -41,7 +42,7 @@ function ProfileStep() {
     )
     const { error: saveError } = await supabase
       .from('users')
-      .update({ ...fields, onboarding_complete: true })
+      .update({ ...fields, ...identityFields(profile.profile_type, profile.industry), onboarding_complete: true })
       .eq('id', user.id)
 
     if (saveError) {
@@ -54,8 +55,8 @@ function ProfileStep() {
       return
     }
 
-    if (fromSettings) {
-      router.push('/settings')
+    if (fromSettings || from === 'session') {
+      router.push(fromSettings ? '/settings' : '/dashboard')
       return
     }
     // Fire the (potentially 60s+) weekly study without blocking navigation.
@@ -65,9 +66,10 @@ function ProfileStep() {
 
   return (
     <OnboardingShell
-      step={4}
-      title="Now the fun part."
-      subtitle="Seven quick taps so I can ask you questions only you can answer."
+      step={1}
+      sharpen
+      title="Sharpen your questions."
+      subtitle="A minute of quick taps so next week I ask you something only you can answer."
       thinking={saving}
     >
       {initial ? (
@@ -75,7 +77,7 @@ function ProfileStep() {
           initial={initial}
           saving={saving}
           error={error}
-          finishLabel={fromSettings ? 'Save my profile' : undefined}
+          finishLabel={fromSettings ? 'Save my profile' : 'Sharpen my questions ✦'}
           onComplete={save}
         />
       ) : (

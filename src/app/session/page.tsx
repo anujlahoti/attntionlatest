@@ -3,8 +3,10 @@
 import { useMemo, useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { currentWeekOf } from '@/lib/week'
+import { resolveNiche } from '@/lib/niches'
 import SessionFlow, { SessionAdapter } from '@/components/session/SessionFlow'
 import AppHeader from '@/components/dashboard/AppHeader'
+import { clearHandoffDraft, readHandoff } from '@/lib/demo-handoff'
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -17,14 +19,14 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 }
 
 export default function SessionPage() {
-  const [profile, setProfile] = useState<{ id: string; full_name?: string; profession?: string; company?: string; niche?: string } | null>(null)
+  const [profile, setProfile] = useState<{ id: string; full_name?: string; profession?: string; company?: string; niche?: string; industry?: string } | null>(null)
 
   useEffect(() => {
     // Created in effects (browser only) so the page can be prerendered without env vars.
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
-      const { data } = await supabase.from('users').select('id, full_name, profession, company, niche').eq('id', user.id).single()
+      const { data } = await supabase.from('users').select('id, full_name, profession, company, niche, industry').eq('id', user.id).single()
       setProfile(data ?? { id: user.id })
     })
   }, [])
@@ -34,7 +36,7 @@ export default function SessionPage() {
     const supabase = createClient()
     const weekOf = currentWeekOf()
     // Filled in by load(); read by the later steps of the flow.
-    const current = { sessionId: '', photoPath: null as string | null }
+    const current = { sessionId: '', photoPath: null as string | null, swapsUsed: 0 }
 
     return {
       userName: profile.full_name || 'You',
@@ -55,11 +57,28 @@ export default function SessionPage() {
 
         current.sessionId = session.id
         current.photoPath = session.photo_path || null
+        current.swapsUsed = session.question_swaps ?? 0
+
+        // A draft made in the demo before signing up lands in the first session.
+        const handoff = readHandoff()
+        if (handoff?.draft && !session.transcript && !session.draft_post) {
+          const { imported } = await postJSON<{ imported: boolean }>('/api/session/import', {
+            sessionId: current.sessionId,
+            question: handoff.question,
+            transcript: handoff.transcript,
+            draft: handoff.draft,
+          }).catch(() => ({ imported: false }))
+          if (imported) {
+            clearHandoffDraft()
+            ;({ data: session } = await fetchSession())
+          }
+        }
+        if (!session) throw new Error('Could not load this week’s session.')
 
         const { data: intel } = await supabase
           .from('niche_intelligence')
           .select('*')
-          .eq('niche', profile.niche)
+          .eq('niche', resolveNiche(profile).key)
           .eq('week_of', weekOf)
           .maybeSingle()
 
@@ -77,6 +96,7 @@ export default function SessionPage() {
           draftPost: session.final_post || session.draft_post || '',
           photoUrl,
           published: session.status === 'published',
+          swapsLeft: typeof session.question_swaps === 'number' ? Math.max(0, 3 - session.question_swaps) : 3,
         }
       },
 
@@ -116,6 +136,37 @@ export default function SessionPage() {
         const res = await fetch(`/api/session/photo-recommendation?session_id=${current.sessionId}`)
         if (!res.ok) throw new Error('Photo recommendation failed')
         return res.json()
+      },
+
+async followUp(answer) {
+        return postJSON('/api/session/follow-up', { sessionId: current.sessionId, answer })
+      },
+
+      async swapQuestion() {
+        const r = await postJSON<{ question: string; swapsLeft: number; swapsUsed: number }>('/api/session/swap-question', {
+          sessionId: current.sessionId,
+          swapsUsed: current.swapsUsed,
+        })
+        current.swapsUsed = r.swapsUsed
+        return r
+      },
+
+      async anonymize(post) {
+        return (await postJSON<{ post: string }>('/api/post/anonymize', { post })).post
+      },
+
+      async saveResults({ postUrl }) {
+        await postJSON('/api/session/results', { sessionId: current.sessionId, postUrl })
+      },
+
+      sharpenHref: '/onboarding/profile?from=session',
+
+      track(name, props) {
+        fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, props }),
+        }).catch(() => {})
       },
 
       publish(post) {

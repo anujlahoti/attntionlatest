@@ -1,15 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import OnboardingShell from '@/components/onboarding/OnboardingShell'
 import { Typing } from '@/components/session/Bubbles'
+import { readHandoff } from '@/lib/demo-handoff'
 
 export default function OnboardingBrand() {
   const router = useRouter()
   const [websiteUrl, setWebsiteUrl] = useState('')
+
+  // Arriving from the demo: reuse the website they gave there.
+  useEffect(() => {
+    const website = readHandoff()?.profile.website
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time prefill from browser storage
+    if (website) setWebsiteUrl(website)
+  }, [])
   const [loadingLabel, setLoadingLabel] = useState('')
 
   async function finish(url: string) {
@@ -20,7 +28,8 @@ export default function OnboardingBrand() {
       body: JSON.stringify({ websiteUrl: url }),
     })
 
-    router.push('/onboarding/profile')
+    // Straight to the first question: the session page studies the niche and asks.
+    router.push('/session')
   }
 
   return (
@@ -48,10 +57,10 @@ export default function OnboardingBrand() {
         ) : (
           <div className="flex flex-col sm:flex-row gap-4">
             <Button size="lg" onClick={() => finish(websiteUrl.trim())} disabled={!websiteUrl.trim()}>
-              Learn my brand &amp; continue →
+              Learn my brand &amp; get my question →
             </Button>
             <Button size="lg" variant="ghost" onClick={() => finish('')}>
-              Skip for now
+              Skip, show me my question
             </Button>
           </div>
         )}

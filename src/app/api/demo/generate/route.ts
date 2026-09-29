@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 export const maxDuration = 120
 
 export async function POST(request: Request) {
-  const limited = demoRateLimit(request)
+  const limited = await demoRateLimit(request)
   if (limited) return limited
 
   const body = await request.json()
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Tell Muse a little more first' }, { status: 400 })
   }
 
-  const { post, preview } = await draftPost(
+  const draft = await draftPost(
     transcript,
     {
       winning_format: String(body.winningFormat || 'personal story with a lesson').slice(0, 300),
@@ -23,5 +23,5 @@ export async function POST(request: Request) {
     },
     demoProfile(body)
   )
-  return NextResponse.json({ draftPost: post, preview })
+  return NextResponse.json({ draftPost: draft.post, preview: draft.preview, flags: draft.flags })
 }

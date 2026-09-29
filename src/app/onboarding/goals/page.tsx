@@ -1,16 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Button from '@/components/ui/Button'
 import OnboardingShell from '@/components/onboarding/OnboardingShell'
 import GoalPicker from '@/components/onboarding/GoalPicker'
+import { readHandoff } from '@/lib/demo-handoff'
 
 export default function OnboardingGoals() {
   const router = useRouter()
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Arriving from the demo: keep the goals they already picked.
+  useEffect(() => {
+    const goals = readHandoff()?.profile.goals
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time prefill from browser storage
+    if (goals?.length) setSelected(goals.slice(0, 3))
+  }, [])
 
   function toggle(id: string) {
     setSelected((prev) =>

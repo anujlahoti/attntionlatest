@@ -11,12 +11,15 @@ const PANELS = [
   { bg: 'bg-rose', note: 'Every portrait starts with a sitting. Tell me who I am painting.' },
   { bg: 'bg-ochre', note: 'A painting needs a purpose. What should your posts do for you?' },
   { bg: 'bg-cobalt text-paper', note: 'Your words, your colours. Show me where your brand lives.' },
-  { bg: 'bg-olive text-paper', note: 'The better I know you, the better my questions. Seven quick taps.' },
 ]
+const SHARPEN_PANEL = { bg: 'bg-olive text-paper', note: 'The better I know you, the better my questions. A minute, once.' }
 
+// Onboarding is three sittings to the first question. `sharpen` renders the same
+// shell for the optional deep-profile quiz offered after the first post.
 export default function OnboardingShell({
   step,
-  total = 4,
+  total = 3,
+  sharpen = false,
   title,
   subtitle,
   thinking = false,
@@ -24,12 +27,13 @@ export default function OnboardingShell({
 }: {
   step: number
   total?: number
+  sharpen?: boolean
   title: string
   subtitle?: string
   thinking?: boolean
   children: ReactNode
 }) {
-  const panel = PANELS[(step - 1) % PANELS.length]
+  const panel = sharpen ? SHARPEN_PANEL : PANELS[(step - 1) % PANELS.length]
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {/* The muse's side of the canvas */}
@@ -42,7 +46,7 @@ export default function OnboardingShell({
           <p className="mt-8 max-w-sm font-display text-3xl leading-tight italic">&ldquo;{panel.note}&rdquo;</p>
         </div>
         <p className="relative text-xs font-bold uppercase tracking-[0.16em]">
-          Sitting {NUMERALS[step - 1]} of {NUMERALS[total - 1]}
+          {sharpen ? 'Sharpen your questions' : `Sitting ${NUMERALS[step - 1]} of ${NUMERALS[total - 1]}`}
         </p>
       </aside>
 
@@ -53,9 +57,9 @@ export default function OnboardingShell({
         </div>
         <div className="flex-1 flex items-start lg:items-center">
           <div className="w-full max-w-xl mx-auto py-8">
-            <Progress step={step} total={total} />
-            <div key={step} className="mt-10 fade-up">
-              <p className="font-display italic text-terracotta text-lg">{NUMERALS[step - 1]}.</p>
+            {!sharpen && <Progress step={step} total={total} />}
+            <div key={step} className={sharpen ? 'fade-up' : 'mt-10 fade-up'}>
+              {!sharpen && <p className="font-display italic text-terracotta text-lg">{NUMERALS[step - 1]}.</p>}
               <h1 className="mt-1 font-display text-4xl sm:text-[44px] leading-[1.05] font-semibold tracking-tight">{title}</h1>
               {subtitle && <p className="mt-3 text-muted text-lg">{subtitle}</p>}
               <div className="mt-9">{children}</div>

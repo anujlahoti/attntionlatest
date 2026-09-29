@@ -1,5 +1,6 @@
 import { createAdminClient } from './supabase/admin'
 import { aiProvider, hasOpenAIKey, recentAIError } from './ai'
+import { emailConfigured } from './notify'
 
 export interface IntegrationStatus {
   key: string
@@ -40,9 +41,16 @@ export function integrationStatus(): IntegrationStatus[] {
     {
       key: 'apify',
       label: 'Apify',
-      purpose: 'Scrapes what is trending in your niche',
+      purpose: 'Reads real top posts in your niche (top-content + post search)',
       live: !!process.env.APIFY_API_TOKEN,
       fallback: 'Uses a curated set of proven posts',
+    },
+    {
+      key: 'email',
+      label: 'Monday email',
+      purpose: 'Sends each user their weekly question (Resend)',
+      live: emailConfigured(),
+      fallback: 'Add RESEND_API_KEY and EMAIL_FROM; the calendar reminder works meanwhile',
     },
     {
       key: 'blotato',

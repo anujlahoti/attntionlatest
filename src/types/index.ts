@@ -61,6 +61,8 @@ export interface NicheIntelligence {
   sample_posts: SamplePost[]
   generated_question: string
   insight_summary?: string
+  data_source?: 'top-content' | 'search' | 'sample'
+  post_count?: number
   updated_at: string
 }
 

@@ -11,6 +11,7 @@ import IntegrationPanel from '@/components/dashboard/IntegrationPanel'
 import Badge from '@/components/ui/Badge'
 import { Placard } from '@/components/ui/Art'
 import { GOALS } from '@/types'
+import { resolveNiche } from '@/lib/niches'
 
 export const metadata = { title: 'Studio' }
 
@@ -41,7 +42,7 @@ export default async function Dashboard() {
   const { data: intel } = await supabase
     .from('niche_intelligence')
     .select('winning_format, topic_clusters')
-    .eq('niche', profile?.niche)
+    .eq('niche', resolveNiche(profile ?? {}).key)
     .eq('week_of', weekOf)
     .maybeSingle()
 
@@ -83,6 +84,13 @@ export default async function Dashboard() {
                 </div>
               ))}
             </div>
+
+            <a
+              href="/api/calendar"
+              className="self-start inline-flex items-center gap-2 text-sm font-semibold underline decoration-ochre decoration-2 underline-offset-4 hover:decoration-terracotta"
+            >
+              📅 Add a Monday reminder to your calendar
+            </a>
 
             <section>
               <div className="flex items-end justify-between mb-5">

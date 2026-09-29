@@ -1,8 +1,10 @@
-import { scrapeLinkedInTopContent, ScrapedPost } from './apify'
+import { PostSource, scrapeNichePosts, ScrapedPost } from './apify'
+import { Niche } from './niches'
 import { analyzeNichePosts, NicheAnalysis } from './content'
 
 export interface WeeklyIntelligence extends NicheAnalysis {
   posts: ScrapedPost[]
+  source: PostSource
 }
 
 const HOOKS: { hook: string; test: RegExp }[] = [
@@ -21,7 +23,11 @@ const FORMATS: { format: string; test: (text: string) => boolean }[] = [
 ]
 
 const STOPWORDS = new Set(
-  'about after again their there these those which while would could should being other every people really things think where because before still thing years never always great today linkedin posts share learned'.split(' ')
+  ('about after again their there these those which while would could should being other every people really things ' +
+    'think where because before still thing years never always great today linkedin posts share learned nobody chase ' +
+    'biggest right example something someone everyone anything first second third little actually during without ' +
+    'going doing having making getting within across under while whose whole since until above below years weeks ' +
+    'month months called asked comment follow repost thanks thank amazing incredible').split(' ')
 )
 
 function topBy<T extends string>(items: { key: T; weight: number }[]) {
@@ -69,19 +75,32 @@ export function analyzeHeuristically(posts: ScrapedPost[]): NicheAnalysis {
 
 // The shared, per-niche half of the weekly study. Questions are personal and
 // are generated per user on top of this (see drafting.personalQuestion).
-export async function buildWeeklyIntelligence(niche: string, nicheSlug: string): Promise<WeeklyIntelligence> {
-  const posts = await scrapeLinkedInTopContent(nicheSlug)
+export async function buildWeeklyIntelligence(niche: Niche): Promise<WeeklyIntelligence> {
+  const { posts, source } = await scrapeNichePosts(niche)
+
+  // Placeholder posts can't tell us what is trending: use proven patterns and
+  // say so, rather than presenting sample-derived "trends" as live data.
+  if (source === 'sample') {
+    return {
+      winning_format: 'personal story with a lesson',
+      winning_hook: 'opens with a specific moment',
+      topic_clusters: [],
+      insight_summary: 'Live LinkedIn data was unavailable this week, so this uses patterns that reliably perform: specific, first-hand stories.',
+      posts,
+      source,
+    }
+  }
 
   let analysis: NicheAnalysis
   try {
     analysis = await analyzeNichePosts(
       posts.slice(0, 12).map((p) => ({ text: p.text, likes: p.reactions, comments: p.comments })),
-      niche
+      niche.key
     )
   } catch (err) {
     console.error('AI niche analysis failed, using heuristic analysis', err)
     analysis = analyzeHeuristically(posts)
   }
 
-  return { ...analysis, posts }
+  return { ...analysis, posts, source }
 }

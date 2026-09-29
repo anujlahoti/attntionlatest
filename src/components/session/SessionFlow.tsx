@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Button, { buttonClasses } from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
@@ -11,6 +11,8 @@ import { MuseBubble, Typing, UserBubble } from './Bubbles'
 import LinkedInPreview from './LinkedInPreview'
 import VoiceRecorder from './VoiceRecorder'
 import PhotoRecCard from './PhotoRecCard'
+import SafetyCard from './SafetyCard'
+import { checkPost } from '@/lib/safety'
 import { PhotoRecommendation } from '@/types'
 
 export interface PublishResult {
@@ -28,6 +30,7 @@ export interface SessionSnapshot {
   draftPost?: string
   photoUrl?: string | null
   published?: boolean
+  swapsLeft?: number
 }
 
 // Everything the flow needs from the outside world. The signed-in app backs this
@@ -45,7 +48,21 @@ export interface SessionAdapter {
   recommendPhoto: (post: string) => Promise<PhotoRecommendation & { preview?: boolean }>
   publish: (post: string) => Promise<PublishResult>
   markPosted: (post: string) => Promise<void>
+  // Interview loop: one follow-up when the answer is too thin.
+  followUp: (answer: string) => Promise<{ needed: boolean; question: string; suggestSwap: boolean }>
+  // "Give me a different question" (limited per week); absent = not offered.
+  swapQuestion?: () => Promise<{ question: string; swapsLeft: number }>
+  // One-click anonymise for the "Before you post" check.
+  anonymize: (post: string) => Promise<string>
+  // Results loop: the published post's link (signed-in only).
+  saveResults?: (results: { postUrl?: string }) => Promise<void>
+  // Where to sharpen next week's question after posting (signed-in only).
+  sharpenHref?: string
+  track?: (name: string, props?: Record<string, unknown>) => void
 }
+
+// Words that suggest a mixed-language (e.g. Hinglish) answer.
+const MIXED_LANGUAGE = /\b(yaar|hai|hain|maine|kya|nahi|bhi|abhi|kaam|karta|bolte|asli|baat)\b/i
 
 type Stage = 'loading' | 'error' | 'question' | 'answer' | 'drafting' | 'review' | 'done'
 
@@ -72,6 +89,19 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
   const [copied, setCopied] = useState(false)
   const [markingPosted, setMarkingPosted] = useState(false)
   const [posted, setPosted] = useState(false)
+  const [followUpQ, setFollowUpQ] = useState<string | null>(null)
+  const [followUpSwap, setFollowUpSwap] = useState(false)
+  const [followUpAsked, setFollowUpAsked] = useState(false)
+  const [extra, setExtra] = useState('')
+  const [checkingAnswer, setCheckingAnswer] = useState(false)
+  const [swapsLeft, setSwapsLeft] = useState(3)
+  const [swapping, setSwapping] = useState(false)
+  const [safetyAck, setSafetyAck] = useState(false)
+  const [anonymizing, setAnonymizing] = useState(false)
+  const [postUrl, setPostUrl] = useState('')
+  const [resultsSaved, setResultsSaved] = useState(false)
+  const flags = useMemo(() => (draft ? checkPost(draft) : []), [draft])
+  const blockingFlags = flags.some((f) => f.severity !== 'low') && !safetyAck
   const bottomRef = useRef<HTMLDivElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -97,6 +127,8 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
         setTranscript(snap.transcript || '')
         setDraft(snap.draftPost || '')
         setPhotoUrl(snap.photoUrl || null)
+        if (typeof snap.swapsLeft === 'number') setSwapsLeft(snap.swapsLeft)
+        adapter.track?.('question_shown')
         if (snap.published) {
           setPosted(true)
           setResult({ success: true })
@@ -140,6 +172,71 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
     }
   }
 
+  // One follow-up before drafting when the answer is too thin (asked once).
+  async function requestDraft(text: string) {
+    setTranscript(text)
+    if (followUpAsked) return runDraft(text)
+    setFollowUpAsked(true)
+    setCheckingAnswer(true)
+    try {
+      const f = await adapter.followUp(text)
+      if (f.needed && f.question) {
+        setFollowUpQ(f.question)
+        setFollowUpSwap(f.suggestSwap)
+        return
+      }
+    } catch {
+      // If the check fails, just draft.
+    } finally {
+      setCheckingAnswer(false)
+    }
+    runDraft(text)
+  }
+
+  function answerFollowUp(skip: boolean) {
+    const full = skip || !extra.trim() ? transcript : `${transcript}\n\n${extra.trim()}`
+    setFollowUpQ(null)
+    setExtra('')
+    runDraft(full)
+  }
+
+  async function swapQuestion() {
+    if (!adapter.swapQuestion) return
+    setSwapping(true)
+    try {
+      const r = await adapter.swapQuestion()
+      setSnapshot((s) => ({ ...s, question: r.question }))
+      setSwapsLeft(r.swapsLeft)
+      setTranscript('')
+      setTyped('')
+      setFollowUpQ(null)
+      setFollowUpAsked(false)
+      setStage('question')
+    } catch {
+      setSwapsLeft(0)
+    } finally {
+      setSwapping(false)
+    }
+  }
+
+  async function handleAnonymize() {
+    setAnonymizing(true)
+    try {
+      setDraft(await adapter.anonymize(draft))
+      adapter.track?.('safety_anonymised')
+    } catch {
+      // Leave the draft as is; the user can still edit by hand.
+    } finally {
+      setAnonymizing(false)
+    }
+  }
+
+  async function saveResults() {
+    if (!adapter.saveResults || !postUrl.trim()) return
+    await adapter.saveResults({ postUrl: postUrl.trim() }).catch(() => {})
+    setResultsSaved(true)
+  }
+
   async function handlePhoto(file: File) {
     setPhotoError('')
     setPhotoBusy(true)
@@ -155,7 +252,9 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
   async function handlePublish() {
     setPublishing(true)
     try {
-      setResult(await adapter.publish(draft))
+      const r = await adapter.publish(draft)
+      setResult(r)
+      if (r.success) adapter.track?.('posted', { method: 'auto' })
     } catch {
       setResult({ success: false, manual: true, message: 'Something went wrong. Your post is saved, copy it below.' })
     } finally {
@@ -175,6 +274,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
     await adapter.markPosted(draft).catch(() => {})
     setMarkingPosted(false)
     setPosted(true)
+    adapter.track?.('posted', { method: 'manual' })
   }
 
   const hasAnswer = !!transcript && stage !== 'question'
@@ -223,6 +323,11 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
           <Button size="lg" variant="secondary" onClick={() => { setAnswerMode('text'); setStage('answer') }}>
             Type instead
           </Button>
+          {adapter.swapQuestion && swapsLeft > 0 && (
+            <Button size="lg" variant="ghost" loading={swapping} onClick={swapQuestion}>
+              ↻ Different question ({swapsLeft} left)
+            </Button>
+          )}
         </div>
       )}
 
@@ -242,7 +347,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
             <AnswerComposer
               value={typed}
               onChange={setTyped}
-              onSubmit={() => runDraft(typed.trim())}
+              onSubmit={() => requestDraft(typed.trim())}
               onVoice={() => setAnswerMode('voice')}
             />
           )}
@@ -251,7 +356,37 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
 
       {hasAnswer && <UserBubble>{transcript}</UserBubble>}
 
-      {stage === 'answer' && transcript && (
+      {stage === 'answer' && transcript && followUpQ && (
+        <>
+          <MuseBubble label="One quick follow-up">
+            <p className="font-display text-xl leading-snug font-semibold">{followUpQ}</p>
+          </MuseBubble>
+          <div className="canvas-card p-5 sm:p-6 fade-up">
+            <Textarea
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              rows={4}
+              autoFocus
+              placeholder="Add a line or two. A moment, a name for the role, a number."
+            />
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+              {followUpSwap && adapter.swapQuestion && swapsLeft > 0 && (
+                <Button variant="ghost" loading={swapping} onClick={swapQuestion}>
+                  ↻ Try a different question
+                </Button>
+              )}
+              <Button variant="ghost" onClick={() => answerFollowUp(true)}>
+                Skip, write it now
+              </Button>
+              <Button variant="accent" disabled={!extra.trim()} onClick={() => answerFollowUp(false)}>
+                Add this &amp; paint →
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {stage === 'answer' && transcript && !followUpQ && (
         <div className="flex flex-col items-end gap-3 fade-up">
           {draftError && <p className="text-sm font-medium text-terracotta">{draftError}</p>}
           <div className="flex items-center gap-4">
@@ -266,7 +401,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
             >
               Edit answer
             </Button>
-            <Button variant="accent" onClick={() => runDraft(transcript)}>
+            <Button variant="accent" loading={checkingAnswer} onClick={() => requestDraft(transcript)}>
               Paint my post →
             </Button>
           </div>
@@ -293,6 +428,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
               <p className="mt-3 border-l-4 border-ochre bg-ochre/15 px-3 py-2 text-xs text-ink-soft">
                 <strong>Sketch mode.</strong> The AI writer is offline, so I arranged this from your own words. Edit freely,
                 or hit Rewrite once AI is back.
+                {MIXED_LANGUAGE.test(transcript) && ' Your answer mixes languages; with AI on, I write it in English and keep your phrasing.'}
               </p>
             )}
           </MuseBubble>
@@ -355,6 +491,18 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
             </div>
           )}
 
+          {stage === 'review' && flags.length > 0 && !editing && (
+            <div className="sm:pl-14">
+              <SafetyCard
+                flags={flags}
+                anonymizing={anonymizing}
+                acknowledged={safetyAck}
+                onAnonymize={handleAnonymize}
+                onAcknowledge={setSafetyAck}
+              />
+            </div>
+          )}
+
           {stage === 'review' && (
             <div className="sm:pl-14 fade-up">
               <div className="bg-ochre border-2 border-ink cut-alt p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-ink-sm">
@@ -363,7 +511,9 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
                   <div className="min-w-0">
                     <p className="font-semibold">Ready to hang</p>
                     <p className="text-xs text-ink-soft">
-                      {draft.trim().split(/\s+/).length} words · {photoUrl ? 'photo attached' : 'no photo yet (posts with one do better)'}
+                      {blockingFlags
+                        ? 'Check the "Before you post" notes first'
+                        : `${draft.trim().split(/\s+/).length} words · ${photoUrl ? 'photo attached' : 'no photo yet (posts with one do better)'}`}
                     </p>
                   </div>
                 </div>
@@ -371,7 +521,7 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
                   variant="linkedin"
                   size="lg"
                   loading={publishing}
-                  disabled={!draft.trim() || draft.length > LINKEDIN_LIMIT}
+                  disabled={!draft.trim() || draft.length > LINKEDIN_LIMIT || blockingFlags}
                   onClick={handlePublish}
                 >
                   Post to LinkedIn
@@ -408,6 +558,33 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
                   )}
                   <Link href={adapter.exitHref} className={buttonClasses('secondary', 'lg')}>{adapter.exitLabel}</Link>
                 </div>
+                {adapter.saveResults && !result.postId && (
+                  <div className="mt-8 mx-auto max-w-md text-left">
+                    {resultsSaved ? (
+                      <p className="text-center text-sm text-paper/85">✓ Saved. I&apos;ll ask how it did in a few days.</p>
+                    ) : (
+                      <>
+                        <label className="text-xs font-bold uppercase tracking-[0.14em] text-paper/80">Paste your post&apos;s link (optional)</label>
+                        <div className="mt-2 flex gap-2">
+                          <input
+                            value={postUrl}
+                            onChange={(e) => setPostUrl(e.target.value)}
+                            placeholder="https://www.linkedin.com/posts/…"
+                            className="flex-1 h-11 px-3 bg-paper text-ink border-2 border-ink cut-sm text-sm"
+                          />
+                          <Button variant="accent" onClick={saveResults} disabled={!/linkedin\.com\//.test(postUrl)}>
+                            Save
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {adapter.sharpenHref && (
+                  <Link href={adapter.sharpenHref} className="mt-6 inline-block text-sm font-semibold underline decoration-ochre decoration-2 underline-offset-4">
+                    Sharpen next week&apos;s question (60 seconds) →
+                  </Link>
+                )}
               </div>
             </div>
           ) : (
@@ -431,7 +608,12 @@ export default function SessionFlow({ adapter }: { adapter: SessionAdapter }) {
                   </li>
                 ))}
               </ol>
-              <div className="mt-7 flex flex-col sm:flex-row gap-3">
+              <div className="mt-7 flex flex-col sm:flex-row flex-wrap gap-3">
+                {photoUrl && (
+                  <a href={photoUrl} download="attntion-photo.jpg" className={buttonClasses('secondary', 'lg')}>
+                    ⬇ Download photo
+                  </a>
+                )}
                 <Button variant="linkedin" size="lg" onClick={copyAndOpenLinkedIn}>
                   {copied ? '✓ Copied, LinkedIn opened' : 'Copy & open LinkedIn'}
                 </Button>

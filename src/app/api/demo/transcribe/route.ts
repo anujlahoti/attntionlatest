@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 export async function POST(request: Request) {
-  const limited = demoRateLimit(request)
+  const limited = await demoRateLimit(request)
   if (limited) return limited
 
   const formData = await request.formData()

@@ -8,6 +8,7 @@ import Badge from '@/components/ui/Badge'
 import { buttonClasses } from '@/components/ui/Button'
 import { Placard, Plane } from '@/components/ui/Art'
 import { NicheIntelligence, SamplePost } from '@/types'
+import { resolveNiche } from '@/lib/niches'
 
 export const metadata = { title: 'Insights' }
 
@@ -16,11 +17,12 @@ export default async function InsightsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase.from('users').select('niche').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single()
+  const niche = resolveNiche(profile ?? {}).key
   const { data: rows } = await supabase
     .from('niche_intelligence')
     .select('*')
-    .eq('niche', profile?.niche)
+    .eq('niche', niche)
     .order('week_of', { ascending: false })
     .limit(6)
 
@@ -28,13 +30,15 @@ export default async function InsightsPage() {
   const weekOf = currentWeekOf()
   const current = history.find((h) => h.week_of === weekOf) ?? null
   const previous = history.filter((h) => h.week_of !== weekOf)
-  const topPosts: SamplePost[] = (current?.sample_posts ?? []).slice(0, 6)
+  // Older rows have no data_source: treat them as samples when no post has engagement.
+  const isSample = current?.data_source === 'sample' || (!current?.data_source && !(current?.sample_posts ?? []).some((p) => p.likes > 0))
+  const topPosts: SamplePost[] = isSample ? [] : (current?.sample_posts ?? []).slice(0, 6)
 
   return (
     <div className="min-h-screen">
       <AppHeader />
       <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10">
-        <Placard>The study · {profile?.niche || 'your niche'}</Placard>
+        <Placard>The study · {niche}</Placard>
         <h1 className="mt-3 font-display text-5xl sm:text-6xl font-semibold tracking-[-0.03em] max-w-3xl">
           What your niche is <em className="text-terracotta">responding to</em> this week.
         </h1>
@@ -48,7 +52,12 @@ export default async function InsightsPage() {
           </div>
         ) : (
           <>
-            <div className="mt-12 grid gap-6 md:grid-cols-3">
+            <p className={`mt-6 inline-block border-2 border-ink cut-sm px-3 py-1.5 text-sm font-medium ${isSample ? 'bg-ochre' : 'bg-surface'}`}>
+              {isSample
+                ? 'Live LinkedIn data wasn' + "'" + 't available this week, so these are proven patterns, not live trends.'
+                : `Based on ${current.post_count || current.sample_posts?.length || 'recent'} real LinkedIn posts in your niche this week.`}
+            </p>
+            <div className="mt-8 grid gap-6 md:grid-cols-3">
               <div className="relative overflow-hidden bg-cobalt text-paper border-2 border-ink cut p-6 shadow-ink md:col-span-2">
                 <Plane shape="circle" color="#e9b23c" size={130} className="absolute -right-8 -top-8" />
                 <p className="relative text-[11px] font-bold uppercase tracking-[0.16em] text-paper/80">Winning format</p>
@@ -59,12 +68,16 @@ export default async function InsightsPage() {
               <div className="bg-rose border-2 border-ink cut-alt p-6 shadow-ink">
                 <p className="text-[11px] font-bold uppercase tracking-[0.16em]">Topics in the air</p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {(current.topic_clusters ?? []).map((t) => (
-                    <Badge key={t} tone="paper" className="text-xs">{t}</Badge>
-                  ))}
+                  {(current.topic_clusters ?? []).length ? (
+                    current.topic_clusters.map((t) => (
+                      <Badge key={t} tone="paper" className="text-xs">{t}</Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm">No live topic data this week.</p>
+                  )}
                 </div>
-                <p className="mt-6 text-[11px] font-bold uppercase tracking-[0.16em]">Your question</p>
-                <p className="mt-1 font-display text-lg leading-snug">{current.generated_question}</p>
+                <p className="mt-6 text-[11px] font-bold uppercase tracking-[0.16em]">Why it&apos;s working</p>
+                <p className="mt-1 font-display text-lg leading-snug">{current.insight_summary || 'Specific, first-hand stories consistently outperform generic advice.'}</p>
               </div>
             </div>
 

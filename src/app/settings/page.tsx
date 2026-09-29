@@ -2,23 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { BrandContext, NICHE_MAP } from '@/types'
+import { BrandContext } from '@/types'
 import AppHeader from '@/components/dashboard/AppHeader'
 import Button from '@/components/ui/Button'
 import Input, { Field } from '@/components/ui/Input'
 import Badge from '@/components/ui/Badge'
 import { Placard } from '@/components/ui/Art'
-import ProfessionPicker from '@/components/onboarding/ProfessionPicker'
+import RoleIndustryPicker from '@/components/onboarding/RoleIndustryPicker'
 import GoalPicker from '@/components/onboarding/GoalPicker'
 import Link from 'next/link'
 import { buttonClasses } from '@/components/ui/Button'
-import { DEEP_PROFILE_FIELDS, DeepProfile, PROFILE_CARDS } from '@/lib/profile'
+import { DEEP_PROFILE_FIELDS, DeepProfile, identityFields, PROFILE_CARDS } from '@/lib/profile'
 
 interface Profile {
   id: string
   email: string
   full_name: string
-  profession: string
   company: string
   website_url: string
   brand_context: BrandContext
@@ -45,7 +44,6 @@ export default function SettingsPage() {
         id: user.id,
         email: user.email ?? '',
         full_name: data?.full_name ?? '',
-        profession: data?.profession ?? '',
         company: data?.company ?? '',
         website_url: data?.website_url ?? '',
         brand_context: data?.brand_context ?? {},
@@ -120,9 +118,14 @@ export default function SettingsPage() {
                 <Input value={profile.company} onChange={(e) => update({ company: e.target.value })} />
               </Field>
             </div>
-            <div className="mt-5 flex flex-col gap-2.5">
-              <span className="text-sm font-semibold">Profession <span className="font-normal text-muted">(sets your niche)</span></span>
-              <ProfessionPicker value={profile.profession} onChange={(profession) => update({ profession })} />
+            <div className="mt-6">
+              <RoleIndustryPicker
+                role={profile.deep.profile_type}
+                industry={profile.deep.industry}
+                onRole={(role) => update({ deep: { ...profile.deep, profile_type: role as DeepProfile['profile_type'] } })}
+                onIndustry={(industry) => update({ deep: { ...profile.deep, industry } })}
+              />
+              <p className="mt-3 text-xs text-muted">Your industry sets the niche your muse studies each week and the hashtags it uses.</p>
             </div>
             <Button
               className="mt-6"
@@ -131,9 +134,7 @@ export default function SettingsPage() {
                 save('profile', {
                   full_name: profile.full_name,
                   company: profile.company,
-                  profession: profile.profession,
-                  niche: profile.profession,
-                  linkedin_niche_slug: NICHE_MAP[profile.profession] || NICHE_MAP.Other,
+                  ...identityFields(profile.deep.profile_type, profile.deep.industry),
                 })
               }
             >

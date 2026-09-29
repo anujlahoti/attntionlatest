@@ -1,6 +1,7 @@
 import { generateJSON, generateText } from './ai'
 import { buildPersonContext, PersonContextInput } from './profile'
 import { buildCTAGuidance, buildHashtagGuidance } from './post-format'
+import { Niche } from './niches'
 import { BrandContext, PhotoRecommendation } from '@/types'
 
 export interface NicheAnalysis {
@@ -43,7 +44,7 @@ Return only valid JSON, no markdown.`)
 }
 
 // ─── 2. Generate the weekly question ────────────────────────────────────────
-export async function generateWeeklyQuestion(nicheIntel: NicheAnalysis, user: PersonContextInput) {
+export async function generateWeeklyQuestion(nicheIntel: NicheAnalysis, user: PersonContextInput, avoid?: string) {
   const text = await generateText(`You are an elite LinkedIn content strategist. You have personally worked with over 100 clients in the ${user.industry || user.niche} space (founders, executives, consultants) and you know this industry inside out. You understand the language people use, the problems they face day-to-day, the wins that make them proud, the frustrations they rarely say out loud, and the stories that resonate with their audience.
 
 You are about to ask ONE question to a client this week. This question will be answered via a 2-3 minute voice note. The answer will become their LinkedIn post.
@@ -73,7 +74,9 @@ Examples of GOOD questions (notice how specific they are):
 - For a finance executive in their 40s: "What's a spreadsheet or model you built 5 years ago that you look back on now and think 'I had no idea what I was doing', and what would you tell that version of yourself?"
 - For an HR consultant: "Tell me about a hiring decision you made recently that went against your gut, and how it turned out."
 
-Return ONLY the question. No intro, no explanation, no alternatives. Just the one question.`)
+${avoid ? `They asked for a different question than this one, so ask about something else entirely: "${avoid}"
+
+` : ''}Return ONLY the question. No intro, no explanation, no alternatives. Just the one question.`)
   return clean(text)
 }
 
@@ -82,7 +85,8 @@ export async function generateLinkedInPost(
   transcript: string,
   nicheIntel: Pick<NicheAnalysis, 'winning_format' | 'winning_hook' | 'topic_clusters'>,
   user: PostAuthor,
-  revisionNote?: string
+  revisionNote?: string,
+  niche?: Niche
 ) {
   const text = await generateText(`You are an elite LinkedIn ghostwriter and content strategist. You have written hundreds of viral LinkedIn posts for professionals in the ${user.industry || user.niche} space. You know how real people in this industry think, speak, and tell stories.
 
@@ -119,12 +123,14 @@ CONTENT BODY (4-8 short paragraphs)
 - Preserve emotional truth: if they sound uncertain, keep the uncertainty; if they sound proud, keep the pride
 - Include specific details (names, numbers, dates, places) from their transcript: specificity is credibility
 - Do NOT add details that aren't in the transcript
+- If the transcript is in another language or mixes languages (e.g. Hinglish), write the post in natural English while keeping their meaning, phrasing and specifics
+- Never include private people's full names, patients' health details, or clients' confidential figures; describe them by role instead ("a client", "one of our patients")
 
 CTA (1-2 lines)
 ${buildCTAGuidance(user.goals)}
 
 HASHTAGS (on a new line at the end)
-${buildHashtagGuidance(user.linkedin_niche_slug || '', user.target_audience)}
+${niche ? buildHashtagGuidance(niche, user) : 'Use 4-6 relevant hashtags on one line at the end.'}
 
 ━━━ QUALITY RULES ━━━
 - The post must sound like it was written BY this person, not FOR them
@@ -190,4 +196,45 @@ Extract the brand's voice. Return JSON:
 }
 
 Return only valid JSON.`)
+}
+
+// ─── 5. Interview follow-up ─────────────────────────────────────────────────
+export interface FollowUpVerdict {
+  needs_follow_up: boolean
+  reason: 'too_thin' | 'off_topic' | 'ok'
+  follow_up: string
+}
+
+export async function generateFollowUp(question: string, answer: string, user: PersonContextInput) {
+  return generateJSON<FollowUpVerdict>(`You are a LinkedIn ghostwriter interviewing a client. You asked them a question and they answered by voice note. Decide whether the answer has enough raw material for a strong 150-300 word post: a specific moment, a detail or number, and what changed or what they learned.
+
+Client:
+${buildPersonContext(user)}
+
+Your question: "${question}"
+Their answer: "${answer}"
+
+If the answer is rich enough, even if it answers a slightly different question than asked, say it is ok. If it is too thin or vague, ask ONE short, warm follow-up question that pulls out the missing specifics (a moment, a number, what happened next). Never ask more than one question.
+
+Return JSON: {"needs_follow_up": boolean, "reason": "too_thin" | "off_topic" | "ok", "follow_up": "the one follow-up question, or empty string"}
+Return only valid JSON.`)
+}
+
+// ─── 6. Anonymise a draft ───────────────────────────────────────────────────
+export async function anonymizeWithAI(post: string, issues: string[]) {
+  const text = await generateText(`You are editing a LinkedIn post before it is published. Rewrite it so it no longer exposes anything the author could regret: ${issues.join('; ')}.
+
+Rules:
+- Replace private people's names with their role ("a patient", "one client", "a founder I work with")
+- Remove health details about identifiable people, and clients' confidential figures (keep the author's own public numbers)
+- Replace named competitors in a negative context with a neutral description ("a big-name firm")
+- Soften strong language
+- If it gives financial or medical advice, add one short line before the hashtags: "This is my experience, not financial or medical advice."
+- Change nothing else: same structure, voice, hook, CTA and hashtags
+
+POST:
+${post}
+
+Return only the rewritten post.`)
+  return text.trim()
 }

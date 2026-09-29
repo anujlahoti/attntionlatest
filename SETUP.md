@@ -41,6 +41,14 @@ vercel
 
 Add all `.env.local` values as Environment Variables in the Vercel dashboard → Redeploy.
 
+### Optional settings
+
+| Variable | What it turns on |
+| --- | --- |
+| `ALERT_WEBHOOK_URL` | Slack/Discord incoming webhook: alerts when over 10% of drafts fall back to sketch mode |
+| `RESEND_API_KEY` + `EMAIL_FROM` | The Monday email with each user's question (and last week's results) |
+| `DEMO_DAILY_CAP` | Max demo API calls per day across all visitors (default 1500; needs patch-003) |
+
 ### Go-live checklist
 
 1. **Vercel env vars**: every key from `.env.local`, with `NEXT_PUBLIC_APP_URL` set to the production
@@ -81,6 +89,9 @@ If you ran `schema.sql` before these were added, also run the patches (each is s
 - `supabase/patch-002-deep-profile.sql`: the v2 deep-profile columns (onboarding step 4) and
   `niche_intelligence.insight_summary`. Until it runs, the quiz shows a message asking for it and the
   status panel flags it; everything else keeps working.
+- `supabase/patch-003-fix-plan.sql`: product events (success metrics), durable demo rate limiting,
+  niche-data provenance, question swaps and post links. Optional: without it those features quietly
+  fall back (per-instance rate limit, client-side swap count, no event log).
 
 ## Notes on this build
 

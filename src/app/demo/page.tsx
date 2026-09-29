@@ -8,21 +8,23 @@ import Badge from '@/components/ui/Badge'
 import { Typing } from '@/components/session/Bubbles'
 import Logo from '@/components/ui/Logo'
 import OnboardingShell from '@/components/onboarding/OnboardingShell'
-import ProfessionPicker from '@/components/onboarding/ProfessionPicker'
+import RoleIndustryPicker from '@/components/onboarding/RoleIndustryPicker'
 import GoalPicker from '@/components/onboarding/GoalPicker'
 import SessionFlow, { SessionAdapter } from '@/components/session/SessionFlow'
-import DeepProfileQuiz from '@/components/onboarding/DeepProfileQuiz'
-import { DeepProfile } from '@/lib/profile'
+import { saveHandoff } from '@/lib/demo-handoff'
+import { PROFILE_CARDS } from '@/lib/profile'
 import { BrandContext } from '@/types'
 
 interface DemoProfile {
   name: string
-  profession: string
   company: string
+  role?: string
+  industry?: string
   goals: string[]
   brandContext: BrandContext
-  deep: DeepProfile
 }
+
+const MAX_SWAPS = 3
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -36,34 +38,38 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
 }
 
 export default function DemoPage() {
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
-  const [profile, setProfile] = useState<DemoProfile>({
-    name: '',
-    profession: '',
-    company: '',
-    goals: [],
-    brandContext: {},
-    deep: {},
-  })
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [profile, setProfile] = useState<DemoProfile>({ name: '', company: '', goals: [], brandContext: {} })
   const [website, setWebsite] = useState('')
   const [readingSite, setReadingSite] = useState(false)
 
+  const roleLabel = PROFILE_CARDS[0].options!.find((o) => o.value === profile.role)?.label
+
   const adapter = useMemo<SessionAdapter | null>(() => {
-    if (step !== 5) return null
-    // Filled in by load(); used when drafting the post.
-    const intelRef = { winningFormat: '', winningHook: '', topicClusters: [] as string[] }
+    if (step !== 4) return null
+    // Filled in as the flow runs; read by later steps and by the account handoff.
+    const state = { winningFormat: '', winningHook: '', topicClusters: [] as string[], question: '', swaps: 0 }
     // Everything the demo APIs need to write for this visitor.
     const who = {
       name: profile.name,
-      profession: profile.profession,
+      profession: roleLabel,
+      profile_type: profile.role,
+      industry: profile.industry,
       goals: profile.goals,
       brandContext: profile.brandContext,
-      ...profile.deep,
+    }
+    const handoffProfile = {
+      name: profile.name,
+      company: profile.company,
+      profile_type: profile.role,
+      industry: profile.industry,
+      goals: profile.goals,
+      website,
     }
 
     return {
       userName: profile.name || 'You',
-      headline: [profile.profession, profile.company].filter(Boolean).join(' · '),
+      headline: [roleLabel, profile.company].filter(Boolean).join(' · '),
       exitHref: '/login',
       exitLabel: 'Save my progress with an account',
 
@@ -75,10 +81,14 @@ export default function DemoPage() {
           insight: string
           topicClusters: string[]
         }>('/api/demo/question', who)
-        intelRef.winningFormat = intel.winningFormat
-        intelRef.winningHook = intel.winningHook
-        intelRef.topicClusters = intel.topicClusters ?? []
-        return { question: intel.question, winningFormat: intel.winningFormat, insight: intel.insight }
+        Object.assign(state, {
+          winningFormat: intel.winningFormat,
+          winningHook: intel.winningHook,
+          topicClusters: intel.topicClusters ?? [],
+          question: intel.question,
+        })
+        saveHandoff({ profile: handoffProfile, question: intel.question })
+        return { question: intel.question, winningFormat: intel.winningFormat, insight: intel.insight, swapsLeft: MAX_SWAPS }
       },
 
       async transcribe(audio, filename) {
@@ -89,13 +99,33 @@ export default function DemoPage() {
         return (await res.json()).transcript
       },
 
+      followUp(answer) {
+        return postJSON('/api/demo/follow-up', { ...who, question: state.question, answer })
+      },
+
+      async swapQuestion() {
+        state.swaps += 1
+        const r = await postJSON<{ question: string }>('/api/demo/question', { ...who, variant: state.swaps, previous: state.question })
+        state.question = r.question
+        saveHandoff({ profile: handoffProfile, question: r.question })
+        return { question: r.question, swapsLeft: MAX_SWAPS - state.swaps }
+      },
+
       async generate(transcript) {
         const { draftPost, preview } = await postJSON<{ draftPost: string; preview?: boolean }>('/api/demo/generate', {
           transcript,
           ...who,
-          ...intelRef,
+          winningFormat: state.winningFormat,
+          winningHook: state.winningHook,
+          topicClusters: state.topicClusters,
         })
+        // Kept so "Save my progress with an account" carries this draft over.
+        saveHandoff({ profile: handoffProfile, question: state.question, transcript, draft: draftPost })
         return { post: draftPost, preview }
+      },
+
+      async anonymize(post) {
+        return (await postJSON<{ post: string }>('/api/post/anonymize', { post })).post
       },
 
       async uploadPhoto(file) {
@@ -112,13 +142,13 @@ export default function DemoPage() {
         return {
           success: false,
           manual: true,
-          message: 'In the demo, you publish by copy and paste. With an account, Muse can post for you.',
+          message: 'In the demo, you publish by copy and paste. With an account, your muse can post for you.',
         }
       },
 
       async markPosted() {},
     }
-  }, [step, profile])
+  }, [step, profile, roleLabel, website])
 
   async function finishSetup(url: string) {
     if (url) {
@@ -136,36 +166,36 @@ export default function DemoPage() {
 
   if (step === 1) {
     return (
-      <OnboardingShell step={1} total={4} title="Hello. I'm your muse." subtitle="A live demo, no account needed. Who am I painting?">
+      <OnboardingShell step={1} title="Hello. I'm your muse." subtitle="A live demo, no account needed. Who am I painting?">
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            if (profile.profession) setStep(2)
+            if (profile.role && profile.industry?.trim()) setStep(2)
           }}
           className="flex flex-col gap-7"
         >
-          <Field label="Your name">
-            <Input
-              placeholder="Priya Nair"
-              value={profile.name}
-              onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-              required
-              autoFocus
-            />
-          </Field>
-          <div className="flex flex-col gap-2.5">
-            <span className="text-sm font-semibold">What do you do?</span>
-            <ProfessionPicker value={profile.profession} onChange={(profession) => setProfile({ ...profile, profession })} />
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label="Your name">
+              <Input
+                placeholder="Priya Nair"
+                value={profile.name}
+                onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                required
+                autoFocus
+              />
+            </Field>
+            <Field label="Company or brand" hint="(optional)">
+              <Input placeholder="Loop Studio" value={profile.company} onChange={(e) => setProfile({ ...profile, company: e.target.value })} />
+            </Field>
           </div>
-          <Field label="Company or brand" hint="(optional)">
-            <Input
-              placeholder="Loop Studio"
-              value={profile.company}
-              onChange={(e) => setProfile({ ...profile, company: e.target.value })}
-            />
-          </Field>
+          <RoleIndustryPicker
+            role={profile.role}
+            industry={profile.industry}
+            onRole={(role) => setProfile((p) => ({ ...p, role }))}
+            onIndustry={(industry) => setProfile((p) => ({ ...p, industry }))}
+          />
           <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-            <Button type="submit" size="lg" disabled={!profile.name || !profile.profession}>
+            <Button type="submit" size="lg" disabled={!profile.name || !profile.role || !profile.industry?.trim()}>
               Continue →
             </Button>
             <p className="text-sm text-ink-soft">
@@ -179,7 +209,7 @@ export default function DemoPage() {
 
   if (step === 2) {
     return (
-      <OnboardingShell step={2} total={4} title="What should LinkedIn do for you?" subtitle="Pick up to three.">
+      <OnboardingShell step={2} title="What should LinkedIn do for you?" subtitle="Pick up to three.">
         <GoalPicker
           selected={profile.goals}
           onToggle={(id) =>
@@ -203,7 +233,6 @@ export default function DemoPage() {
     return (
       <OnboardingShell
         step={3}
-        total={4}
         title="Where can I learn your voice?"
         subtitle="Drop your website and I'll pick up your tone and topics. Optional."
         thinking={readingSite}
@@ -225,28 +254,14 @@ export default function DemoPage() {
           ) : (
             <div className="flex flex-col sm:flex-row gap-4">
               <Button size="lg" onClick={() => finishSetup(website.trim())} disabled={!website.trim()}>
-                Learn my brand &amp; start →
+                Learn my brand &amp; get my question →
               </Button>
               <Button size="lg" variant="ghost" onClick={() => finishSetup('')}>
-                Skip, just start
+                Skip, show me my question
               </Button>
             </div>
           )}
         </div>
-      </OnboardingShell>
-    )
-  }
-
-  if (step === 4) {
-    return (
-      <OnboardingShell step={4} title="Now the fun part." subtitle="Seven quick taps so I can ask you questions only you can answer.">
-        <DeepProfileQuiz
-          initial={profile.deep}
-          onComplete={(deep) => {
-            setProfile((p) => ({ ...p, deep }))
-            setStep(5)
-          }}
-        />
       </OnboardingShell>
     )
   }
@@ -256,7 +271,7 @@ export default function DemoPage() {
       <header className="sticky top-0 z-30 bg-paper/90 backdrop-blur border-b-2 border-ink">
         <div className="mx-auto max-w-6xl flex items-center justify-between gap-3 px-4 sm:px-6 h-16">
           <Logo />
-          <Badge tone="ochre" className="hidden sm:inline-flex">Demo · nothing is saved</Badge>
+          <Badge tone="ochre" className="hidden sm:inline-flex">Demo · your draft carries over if you sign up</Badge>
           <Link href="/login" className={buttonClasses('primary', 'sm')}>Create account</Link>
         </div>
       </header>

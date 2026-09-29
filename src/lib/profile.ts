@@ -1,4 +1,5 @@
 import { BrandContext, ProfileType } from '@/types'
+import { resolveNiche } from './niches'
 
 // The deep profile collected in onboarding step 4. Every field is optional:
 // users can skip cards, and older accounts won't have them at all.
@@ -234,4 +235,19 @@ export function buildPersonContext(user: PersonContextInput): string {
     for (const [k, v] of brand) lines.push(`  - ${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
   }
   return lines.join('\n') || 'No profile details yet.'
+}
+
+// The identity columns written whenever role or industry change (onboarding,
+// the sharpen quiz, settings): one canonical niche from industry, with the role
+// label kept in `profession` for the prompts and headline.
+export function identityFields(role: string | undefined, industry: string | undefined) {
+  const roleLabel = PROFILE_CARDS[0].options!.find((o) => o.value === role)?.label
+  const niche = resolveNiche({ industry, profession: roleLabel })
+  return {
+    profile_type: role || null,
+    industry: industry?.trim() || null,
+    profession: roleLabel ?? null,
+    niche: niche.key,
+    linkedin_niche_slug: niche.slug,
+  }
 }

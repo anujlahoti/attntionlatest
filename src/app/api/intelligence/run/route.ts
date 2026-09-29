@@ -15,6 +15,6 @@ export async function POST() {
   const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single()
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-  const intelligence = await prepareUserWeek(supabase, createAdminClient(), profile)
-  return NextResponse.json({ intelligence })
+  const { intel } = await prepareUserWeek(supabase, createAdminClient(), profile)
+  return NextResponse.json({ intelligence: intel })
 }
